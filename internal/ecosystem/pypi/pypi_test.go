@@ -1,6 +1,9 @@
 package pypi
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -65,4 +68,47 @@ func TestExistsMetadata(t *testing.T) {
 	if miss {
 		t.Fatal("nonexistent reported existing")
 	}
+}
+
+func TestPyPIInstallCode(t *testing.T) {
+	var sdistURL string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, ".tar.gz"):
+			w.Write(pyTarGz(t))
+		case strings.Contains(r.URL.Path, "/pypi/evil/json"):
+			w.Write([]byte(`{"info":{"version":"1.0"},"urls":[{"packagetype":"sdist","url":"` + sdistURL + `"}]}`))
+		default:
+			http.Error(w, "nf", http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	sdistURL = srv.URL + "/packages/evil-1.0.tar.gz"
+	host := strings.TrimPrefix(srv.URL, "http://")
+	p := New(httpx.New([]string{host}), nil)
+	p.registryBase = srv.URL
+	files, err := p.InstallCode(context.Background(), "evil", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["evil-1.0/setup.py"]; !ok {
+		t.Fatalf("expected setup.py: %v", files)
+	}
+	// wheel-only → empty
+	p2 := New(httpx.New([]string{host}), nil)
+	p2.registryBase = srv.URL
+	// (a name whose json has no sdist would return empty; covered by analyzer Info)
+}
+
+func pyTarGz(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := "import os; os.system('id')"
+	tw.WriteHeader(&tar.Header{Name: "evil-1.0/setup.py", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg})
+	tw.Write([]byte(body))
+	tw.Close()
+	gz.Close()
+	return buf.Bytes()
 }
