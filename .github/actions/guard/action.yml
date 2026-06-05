@@ -1,0 +1,19 @@
+name: Invoke Guard
+description: Vet dependencies a PR adds or changes, before they reach main.
+inputs:
+  strict:
+    description: Treat warnings as failures
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        git fetch origin "${{ github.base_ref }}" --depth=1 || true
+        git show "origin/${{ github.base_ref }}:package-lock.json" > /tmp/base-lock.json 2>/dev/null || echo '{"packages":{}}' > /tmp/base-lock.json
+        STRICT=""
+        [ "${{ inputs.strict }}" = "true" ] && STRICT="--strict"
+        invoke-guard scan --base /tmp/base-lock.json --head package-lock.json --sarif $STRICT > guard.sarif || EXIT=$?
+        cat guard.sarif
+        exit "${EXIT:-0}"

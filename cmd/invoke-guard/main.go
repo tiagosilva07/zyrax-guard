@@ -180,9 +180,68 @@ func cmdAllow(args []string) int {
 	return 0
 }
 
+// cmdScan vets the dependencies a PR ADDS or CHANGES, by diffing the lockfile
+// against a base. Only newly added/changed deps are checked, so it's fast and
+// doesn't re-flag the whole tree. Reads base + head lockfiles from --base/--head
+// (paths); defaults head to ./package-lock.json.
 func cmdScan(args []string) int {
-	fmt.Fprintln(os.Stderr, "scan: implemented in a later task")
-	return 2
+	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
+	basePath := fs.String("base", "", "base lockfile (e.g. the target branch's package-lock.json)")
+	headPath := fs.String("head", "package-lock.json", "head lockfile")
+	asJSON := fs.Bool("json", false, "JSON output")
+	asSARIF := fs.Bool("sarif", false, "SARIF output")
+	strict := fs.Bool("strict", false, "treat WARN as failure")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	head, err := os.ReadFile(*headPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "read head lockfile:", err)
+		return 2
+	}
+	var base []byte
+	if *basePath != "" {
+		if base, err = os.ReadFile(*basePath); err != nil {
+			fmt.Fprintln(os.Stderr, "read base lockfile:", err)
+			return 2
+		}
+	} else {
+		base = []byte(`{"packages":{}}`) // no base → treat all as added
+	}
+	added, changed, err := check.DiffLockfiles(base, head)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "parse lockfiles:", err)
+		return 2
+	}
+	orch, err := check.NewNPM(".", loadPopular())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 2
+	}
+	var results []verdict.Result
+	for _, a := range added {
+		results = append(results, orch.Check(context.Background(), a.Name, a.Version))
+	}
+	for _, c := range changed {
+		r := verdict.Decide("npm", c.Name, c.NewIntegrity, []verdict.Signal{check.LockfileIntegrity(c)})
+		results = append(results, r)
+	}
+	reporterFor(*asJSON, *asSARIF).Report(results)
+	var verdicts []string
+	for _, r := range results {
+		verdicts = append(verdicts, r.VerdictStr)
+	}
+	return scanExit(verdicts, *strict)
+}
+
+func scanExit(verdicts []string, strict bool) int {
+	worst := 0
+	for _, v := range verdicts {
+		if c := exitForVerdict(v, strict); c > worst {
+			worst = c
+		}
+	}
+	return worst
 }
 
 func loadPopular() []string { return nil }
