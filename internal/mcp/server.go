@@ -109,11 +109,3 @@ func (s *Server) initializeResult(params json.RawMessage) map[string]any {
 		"serverInfo":      map[string]any{"name": "invoke-guard", "version": s.Version},
 	}
 }
-
-// --- temporary stubs, replaced in Task 2 ---
-func checkPackageTool() map[string]any {
-	return map[string]any{"name": "check_package"}
-}
-func (s *Server) toolsCall(_ json.RawMessage) map[string]any {
-	return map[string]any{"content": []any{}, "isError": false}
-}
