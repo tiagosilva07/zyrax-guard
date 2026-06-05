@@ -1,6 +1,6 @@
 // Package seam defines the four interfaces that keep the verdict engine
 // ecosystem- and business-agnostic: Ecosystem, ThreatIntel, Policy, Reporter.
-// v1 ships only the OSS implementations; paid providers are future drop-ins.
+// Alternative implementations can drop in behind these interfaces later.
 package seam
 
 import (
@@ -43,7 +43,7 @@ type Ecosystem interface {
 	Install(ctx context.Context, names []string, opts InstallOpts) error
 }
 
-// ThreatIntel returns known-bad records. OSS = OSV + denylist; paid = curated feed.
+// ThreatIntel returns known-bad records (OSV plus a bundled denylist).
 type ThreatIntel interface {
 	Lookup(ctx context.Context, ecosystem, name, version string) ([]Advisory, error)
 }
@@ -57,13 +57,13 @@ const (
 	ForceDeny                  // explicitly denied — short-circuit to BLOCK
 )
 
-// Policy is the local (OSS) or org (paid) allow/deny source.
+// Policy is the allow/deny source (the local committed policy file by default).
 type Policy interface {
 	Decide(name string) Decision
 	Allow(name string) error // persist an allowlist entry
 }
 
-// Reporter renders results. OSS = text/json/sarif; paid = platform push.
+// Reporter renders results (text, json, or sarif).
 type Reporter interface {
 	Report(results []verdict.Result) error
 }
