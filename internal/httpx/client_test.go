@@ -41,3 +41,12 @@ func TestGetJSON_404(t *testing.T) {
 		t.Fatalf("want 404,nil got code=%d err=%v", code, err)
 	}
 }
+
+func TestPostJSON_DisallowedHost(t *testing.T) {
+	c := New([]string{"registry.npmjs.org"})
+	req, _ := http.NewRequest(http.MethodPost, "http://169.254.169.254/latest/meta-data", nil)
+	_, _, err := c.PostJSON(req)
+	if err == nil {
+		t.Fatal("expected host-not-allowed error (SSRF guard)")
+	}
+}

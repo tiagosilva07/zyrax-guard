@@ -76,3 +76,19 @@ func (c *Client) GetJSON(ctx context.Context, rawurl string, out any) (int, erro
 	}
 	return resp.StatusCode, nil
 }
+
+// PostJSON sends an already-built POST request, enforcing the same host allowlist,
+// and returns the status code + raw body (capped). For the few APIs (OSV) that
+// require POST. Body must already be set on req.
+func (c *Client) PostJSON(req *http.Request) (int, []byte, error) {
+	if !c.hostAllowed(req.URL) {
+		return 0, nil, fmt.Errorf("host %q not in allowlist (SSRF guard)", req.URL.Host)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	return resp.StatusCode, raw, nil
+}
