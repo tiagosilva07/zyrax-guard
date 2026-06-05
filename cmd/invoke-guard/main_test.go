@@ -83,3 +83,9 @@ func TestUsageMentionsEcosystem(t *testing.T) {
 		t.Error("usage should mention --ecosystem")
 	}
 }
+
+func TestUsageMentionsDeep(t *testing.T) {
+	if !strings.Contains(usage(), "--deep") {
+		t.Error("usage should mention --deep")
+	}
+}

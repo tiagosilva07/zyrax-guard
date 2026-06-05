@@ -25,10 +25,10 @@ func usage() string {
 	return `invoke-guard — check a dependency before you install it
 
 usage:
-  invoke-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict]
-  invoke-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict]
+  invoke-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict] [--deep]
+  invoke-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep]
   invoke-guard allow <name>
-  invoke-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif]
+  invoke-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   invoke-guard mcp                                  (MCP server for AI agents; stdio)
   invoke-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
   invoke-guard --version
@@ -133,6 +133,7 @@ func cmdCheck(args []string) int {
 	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
 	if err := fs.Parse(reorderFlagsFirst(args, "ecosystem")); err != nil {
 		return 2
 	}
@@ -146,7 +147,7 @@ func cmdCheck(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	res := orch.Check(context.Background(), name, ver)
+	res := orch.CheckWith(context.Background(), name, ver, *deep)
 	reporterFor(*asJSON, *asSARIF).Report([]verdict.Result{res})
 	return exitForVerdict(res.VerdictStr, *strict)
 }
@@ -156,6 +157,7 @@ func cmdInstall(args []string) int {
 	ignoreScripts := fs.Bool("ignore-scripts", false, "pass --ignore-scripts to npm")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
 	if err := fs.Parse(reorderFlagsFirst(args, "ecosystem")); err != nil {
 		return 2
 	}
@@ -173,7 +175,7 @@ func cmdInstall(args []string) int {
 	worst := 0
 	for _, raw := range names {
 		n, v := splitNameVersion(raw)
-		r := orch.Check(context.Background(), n, v)
+		r := orch.CheckWith(context.Background(), n, v, *deep)
 		results = append(results, r)
 		if c := exitForVerdict(r.VerdictStr, *strict); c > worst {
 			worst = c
@@ -233,6 +235,7 @@ func cmdScan(args []string) int {
 	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -274,7 +277,7 @@ func cmdScan(args []string) int {
 	}
 	var results []verdict.Result
 	for _, a := range added {
-		results = append(results, orch.Check(context.Background(), a.Name, a.Version))
+		results = append(results, orch.CheckWith(context.Background(), a.Name, a.Version, *deep))
 	}
 	for _, c := range changed {
 		r := verdict.Decide(*eco, c.Name, c.Version, []verdict.Signal{check.LockfileIntegrity(c)})
