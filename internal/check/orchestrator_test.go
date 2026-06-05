@@ -21,6 +21,9 @@ func (s stubEco) Exists(context.Context, string, string) (bool, error)      { re
 func (s stubEco) Metadata(context.Context, string) (seam.Metadata, error)   { return s.md, nil }
 func (s stubEco) PopularList() []string                                     { return s.pop }
 func (s stubEco) Install(context.Context, []string, seam.InstallOpts) error { return nil }
+func (s stubEco) InstallCode(context.Context, string, string) (map[string]string, error) {
+	return map[string]string{}, nil
+}
 
 type stubIntel struct{ advs []seam.Advisory }
 
