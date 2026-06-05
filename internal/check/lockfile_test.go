@@ -6,6 +6,53 @@ import (
 	"github.com/tiagosilva07/invoke-guard/internal/verdict"
 )
 
+func TestParseTOMLPackages(t *testing.T) {
+	cargo := `# Cargo.lock
+[[package]]
+name = "serde"
+version = "1.0.197"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "abc123"
+
+[[package]]
+name = "rand"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "def456"
+
+[metadata]
+ignored = "yes"
+`
+	entries := parseTOMLPackages([]byte(cargo))
+	if len(entries) != 2 || entries[0].Name != "serde" || entries[0].Version != "1.0.197" || entries[0].Integrity != "abc123" {
+		t.Fatalf("cargo parse wrong: %+v", entries)
+	}
+}
+
+func TestParseRequirements(t *testing.T) {
+	req := `# comment
+requests==2.31.0
+Flask[async]==3.0.0
+-e ./local
+urllib3 >= 1.26
+`
+	m := parseRequirements([]byte(req))
+	if m["requests"].Version != "2.31.0" {
+		t.Fatalf("requests: %+v", m["requests"])
+	}
+	if _, ok := m["flask"]; !ok { // normalized lowercase, extras stripped
+		t.Fatalf("flask missing: %+v", m)
+	}
+}
+
+func TestParseLockDispatch(t *testing.T) {
+	cargo := "[[package]]\nname = \"serde\"\nversion = \"1.0\"\n"
+	m, err := ParseLock("crates", []byte(cargo))
+	if err != nil || m["serde"].Version != "1.0" {
+		t.Fatalf("dispatch crates: %+v err=%v", m, err)
+	}
+}
+
 func TestParseLockAdded(t *testing.T) {
 	base := `{"packages":{"node_modules/a":{"version":"1.0.0","resolved":"https://r/a","integrity":"sha-A"}}}`
 	head := `{"packages":{"node_modules/a":{"version":"1.0.0","resolved":"https://r/a","integrity":"sha-A"},"node_modules/b":{"version":"2.0.0","resolved":"https://r/b","integrity":"sha-B"}}}`
