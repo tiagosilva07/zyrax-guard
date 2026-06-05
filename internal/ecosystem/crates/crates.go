@@ -10,11 +10,15 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/tiagosilva07/invoke-guard/internal/artifact"
 	"github.com/tiagosilva07/invoke-guard/internal/httpx"
 	"github.com/tiagosilva07/invoke-guard/internal/seam"
 )
 
-const Host = "crates.io"
+const (
+	Host       = "crates.io"
+	StaticHost = "static.crates.io"
+)
 
 // crates names: alphanumeric, _ and -, must start with a letter, max 64.
 var nameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
@@ -86,6 +90,28 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		WeeklyLoads: j.Crate.RecentDownloads,
 		Published:   j.Crate.CreatedAt,
 	}, nil
+}
+
+// InstallCode downloads the .crate (gzip tar) and returns its files. The download
+// endpoint redirects to StaticHost; both hosts must be in the client allowlist.
+func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[string]string, error) {
+	if err := p.ValidateName(name); err != nil {
+		return nil, err
+	}
+	if version == "" {
+		if md, err := p.Metadata(ctx, name); err == nil {
+			version = md.Latest
+		}
+	}
+	if version == "" {
+		return map[string]string{}, nil
+	}
+	url := p.base + "/api/v1/crates/" + name + "/" + version + "/download"
+	_, b, err := p.http.GetBytes(ctx, url, 32<<20)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.ExtractTarGz(b, artifact.DefaultLimits())
 }
 
 // Install runs `cargo add <names>` (the add-a-dependency analog) with array args.
