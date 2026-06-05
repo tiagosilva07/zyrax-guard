@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tiagosilva07/invoke-guard/internal/artifact"
 	"github.com/tiagosilva07/invoke-guard/internal/httpx"
 	"github.com/tiagosilva07/invoke-guard/internal/seam"
 )
@@ -17,6 +18,7 @@ import (
 const (
 	RegistryHost = "pypi.org"
 	StatsHost    = "pypistats.org"
+	FilesHost    = "files.pythonhosted.org"
 )
 
 // PEP 503: a valid name matches this; normalized form lowercases and collapses ._- to -.
@@ -118,6 +120,41 @@ func pickRepo(urls map[string]string, home string) string {
 		}
 	}
 	return home
+}
+
+type pypiURLs struct {
+	URLs []struct {
+		PackageType string `json:"packagetype"`
+		URL         string `json:"url"`
+	} `json:"urls"`
+}
+
+// InstallCode downloads the sdist (if any) and returns its files. Wheel-only
+// packages have no install-time code → an empty map (the analyzer reports Info).
+func (p *Provider) InstallCode(ctx context.Context, name, _ string) (map[string]string, error) {
+	if err := p.ValidateName(name); err != nil {
+		return nil, err
+	}
+	var u pypiURLs
+	code, err := p.http.GetJSON(ctx, p.registryBase+"/pypi/"+normalize(name)+"/json", &u)
+	if err != nil || code != 200 {
+		return nil, err
+	}
+	var sdist string
+	for _, x := range u.URLs {
+		if x.PackageType == "sdist" {
+			sdist = x.URL
+			break
+		}
+	}
+	if sdist == "" {
+		return map[string]string{}, nil // wheel-only
+	}
+	_, b, err := p.http.GetBytes(ctx, sdist, 32<<20)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.ExtractTarGz(b, artifact.DefaultLimits())
 }
 
 // Install runs `pip install <names>` with names as ARRAY args (never a shell).

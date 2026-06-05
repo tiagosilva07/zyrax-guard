@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/tiagosilva07/invoke-guard/internal/artifact"
 	"github.com/tiagosilva07/invoke-guard/internal/httpx"
 	"github.com/tiagosilva07/invoke-guard/internal/seam"
 )
@@ -111,6 +112,40 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		md.WeeklyLoads = dl.Downloads
 	}
 	return md, nil
+}
+
+type tarballPackument struct {
+	DistTags map[string]string `json:"dist-tags"`
+	Versions map[string]struct {
+		Dist struct {
+			Tarball string `json:"tarball"`
+		} `json:"dist"`
+	} `json:"versions"`
+}
+
+// InstallCode downloads the version's tarball and returns its extracted files
+// (path->content) for static install-script analysis.
+func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[string]string, error) {
+	if err := p.ValidateName(name); err != nil {
+		return nil, err
+	}
+	var pk tarballPackument
+	code, err := p.http.GetJSON(ctx, p.registryBase+"/"+name, &pk)
+	if err != nil || code != 200 {
+		return nil, err
+	}
+	if version == "" {
+		version = pk.DistTags["latest"]
+	}
+	url := pk.Versions[version].Dist.Tarball
+	if url == "" {
+		return map[string]string{}, nil
+	}
+	_, b, err := p.http.GetBytes(ctx, url, 32<<20)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.ExtractTarGz(b, artifact.DefaultLimits())
 }
 
 // Install runs the real `npm install`, passing names as ARGUMENT ARRAY entries.

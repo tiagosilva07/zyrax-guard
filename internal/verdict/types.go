@@ -40,6 +40,7 @@ const (
 	RuleLockfileIntegrity = "lockfile-integrity"
 	RuleMaintainerChange  = "maintainer-change"
 	RuleCheckError        = "check-error"
+	RuleSuspiciousInstall = "suspicious-install"
 )
 
 // Signal is one check's contribution to the verdict.
