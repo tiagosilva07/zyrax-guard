@@ -25,6 +25,11 @@ const (
 var nameRe = regexp.MustCompile(`^([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9._-]*[A-Za-z0-9])$`)
 var sepRe = regexp.MustCompile(`[-_.]+`)
 
+// safeVersion gates a version before it goes into a registry URL path. PEP 440
+// versions use only this character set; anything else (notably '/') is rejected
+// so it cannot inject path segments — we fall back to the latest release instead.
+var safeVersion = regexp.MustCompile(`^[A-Za-z0-9._+!-]+$`)
+
 func normalize(name string) string {
 	return sepRe.ReplaceAllString(strings.ToLower(name), "-")
 }
@@ -129,16 +134,26 @@ type pypiURLs struct {
 	} `json:"urls"`
 }
 
-// InstallCode downloads the sdist (if any) and returns its files. Wheel-only
-// packages have no install-time code → an empty map (the analyzer reports Info).
-func (p *Provider) InstallCode(ctx context.Context, name, _ string) (map[string]string, error) {
+// InstallCode downloads the sdist (if any) and returns its files. When version
+// is given (and well-formed) it fetches that release's artifacts via the
+// per-version endpoint; otherwise it falls back to the latest release. Wheel-only
+// packages, missing versions, and 404s have no install-time code → an empty map
+// (the analyzer reports Info) — never an error, keeping deep checks best-effort.
+func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[string]string, error) {
 	if err := p.ValidateName(name); err != nil {
 		return nil, err
 	}
+	url := p.registryBase + "/pypi/" + normalize(name) + "/json"
+	if version != "" && safeVersion.MatchString(version) {
+		url = p.registryBase + "/pypi/" + normalize(name) + "/" + version + "/json"
+	}
 	var u pypiURLs
-	code, err := p.http.GetJSON(ctx, p.registryBase+"/pypi/"+normalize(name)+"/json", &u)
-	if err != nil || code != 200 {
+	code, err := p.http.GetJSON(ctx, url, &u)
+	if err != nil {
 		return nil, err
+	}
+	if code != 200 {
+		return map[string]string{}, nil // not found / no such release → nothing to inspect
 	}
 	var sdist string
 	for _, x := range u.URLs {
