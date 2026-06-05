@@ -50,7 +50,7 @@ npm() {
 // because Go raw-string literals cannot contain backtick characters.
 var powershellSnippet = "# invoke-guard npm guard — added by: Invoke-Expression (invoke-guard init powershell)\n" +
 	"function npm {\n" +
-	"  if ($args.Count -ge 1 -and @('install','i','add') -contains $args[0]) {\n" +
+	"  if ($args.Count -ge 2 -and @('install','i','add') -contains $args[0]) {\n" +
 	"    foreach ($__ig_arg in $args[1..($args.Count-1)]) {\n" +
 	"      if ($__ig_arg -notlike '-*') {\n" +
 	"        & invoke-guard check $__ig_arg\n" +

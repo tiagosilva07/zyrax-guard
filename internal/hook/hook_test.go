@@ -24,6 +24,16 @@ func TestSnippetStructure(t *testing.T) {
 	}
 }
 
+func TestPowershellBareInstallNotChecked(t *testing.T) {
+	// A bare `npm install` (no package args) must NOT vet the verb itself.
+	// PowerShell's $args[1..0] descending-range trap is avoided by gating on
+	// Count -ge 2, so the foreach only runs when there is at least one package.
+	s, _ := Snippet("powershell")
+	if !strings.Contains(s, "$args.Count -ge 2") {
+		t.Errorf("powershell snippet must gate the check loop on Count -ge 2 (bare install safety):\n%s", s)
+	}
+}
+
 func TestBashSnippetGatesAndPassesThrough(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")
