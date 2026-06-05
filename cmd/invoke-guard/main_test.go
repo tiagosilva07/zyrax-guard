@@ -60,3 +60,15 @@ func TestInitBashPrintsSnippet(t *testing.T) {
 		t.Errorf("init bash exit = %d, want 0", got)
 	}
 }
+
+func TestCheckUnknownEcosystemExits2(t *testing.T) {
+	if got := run([]string{"check", "--ecosystem", "bogus", "x"}); got != 2 {
+		t.Errorf("unknown ecosystem exit = %d, want 2", got)
+	}
+}
+
+func TestUsageMentionsEcosystem(t *testing.T) {
+	if !strings.Contains(usage(), "--ecosystem") {
+		t.Error("usage should mention --ecosystem")
+	}
+}

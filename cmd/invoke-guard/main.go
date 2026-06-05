@@ -25,8 +25,8 @@ func usage() string {
 	return `invoke-guard — check a dependency before you install it
 
 usage:
-  invoke-guard check <name>[@version] [--json|--sarif] [--strict]
-  invoke-guard install <names...> [--ignore-scripts] [--strict]
+  invoke-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict]
+  invoke-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict]
   invoke-guard allow <name>
   invoke-guard scan [--strict] [--json|--sarif]
   invoke-guard mcp                                  (MCP server for AI agents; stdio)
@@ -121,6 +121,7 @@ func cmdCheck(args []string) int {
 	asJSON := fs.Bool("json", false, "JSON output")
 	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
 	if err := fs.Parse(reorderFlagsFirst(args)); err != nil {
 		return 2
 	}
@@ -129,7 +130,7 @@ func cmdCheck(args []string) int {
 		return 2
 	}
 	name, ver := splitNameVersion(fs.Arg(0))
-	orch, err := check.NewNPM(".", loadPopular())
+	orch, err := check.New(*eco, ".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
@@ -143,6 +144,7 @@ func cmdInstall(args []string) int {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	ignoreScripts := fs.Bool("ignore-scripts", false, "pass --ignore-scripts to npm")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
 	if err := fs.Parse(reorderFlagsFirst(args)); err != nil {
 		return 2
 	}
@@ -151,7 +153,7 @@ func cmdInstall(args []string) int {
 		fmt.Fprint(os.Stderr, usage())
 		return 2
 	}
-	orch, err := check.NewNPM(".", loadPopular())
+	orch, err := check.New(*eco, ".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
