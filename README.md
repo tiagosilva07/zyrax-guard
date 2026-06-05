@@ -246,13 +246,10 @@ every release ships SLSA L3 provenance so you can verify the build chain yoursel
 
 ---
 
-## OSS promise
+## Free & open source
 
-Invoke Guard is **MIT-licensed, free forever for individuals and single-repository use.**
-
-A future paid tier will add *data and org-scale services* — a curated threat-intelligence
-feed, org-wide policy, and a dashboard. The basic safety checks, the PR gate, and the
-SARIF/JSON output are free and not paywalled — now or ever.
+Invoke Guard is **MIT-licensed and free** — every check, the PR gate, the MCP server, the
+shell hook, and the JSON/SARIF output. Read the code and verify the binary yourself.
 
 ---
 
@@ -264,10 +261,9 @@ SARIF/JSON output are free and not paywalled — now or ever.
 | **v1.1** (now) | MCP server (`check_package`) + shell-hook (`invoke-guard init`) — shipped |
 | **v1.2** | PyPI + crates providers |
 | **v1.3** | Deep/sandbox behavioral check (opt-in signal) |
-| **paid** | Curated threat feed, org policy, dashboard |
 
-None of the roadmap items require re-architecting v1 — they drop in via the existing
-`Ecosystem`, `ThreatIntel`, `Policy`, and `Reporter` seams.
+The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
+`Reporter` seams — no re-architecting required.
 
 ---
 

@@ -50,8 +50,8 @@ func (o *OSV) Lookup(ctx context.Context, ecosystem, name, version string) ([]se
 	if err != nil {
 		// OSV is a best-effort supplement; the bundled denylist is the
 		// authoritative floor. Tolerate OSV downtime rather than failing the
-		// whole check (v1 limitation: OSV-only malware is missed while OSV is
-		// unreachable — the paid curated feed addresses this).
+		// whole check (known limitation: OSV-only malware is missed while OSV
+		// is unreachable).
 		return out, nil
 	}
 	return append(out, advs...), nil

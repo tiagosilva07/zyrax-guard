@@ -1,6 +1,6 @@
-// Package report renders verdict results. SARIF output matches the exact subset the
-// Invoke platform's importer reads (tool.driver.name + results[].ruleId/level/message.text),
-// so Guard findings ingest into the platform with no platform changes.
+// Package report renders verdict results. SARIF output is the standard SARIF 2.1.0
+// subset consumers read (tool.driver.name + results[].ruleId/level/message.text), so
+// Guard findings ingest into GitHub Code Scanning or any SARIF-aware tool unchanged.
 package report
 
 import (
