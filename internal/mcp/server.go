@@ -16,7 +16,7 @@ import (
 
 // Checker is the seam onto the verdict engine. *check.Orchestrator satisfies it.
 type Checker interface {
-	Check(ctx context.Context, name, version string) verdict.Result
+	CheckWith(ctx context.Context, name, version string, deep bool) verdict.Result
 }
 
 // Server serves MCP over a reader/writer.

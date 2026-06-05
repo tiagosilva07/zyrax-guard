@@ -12,13 +12,14 @@ import (
 func checkPackageTool() map[string]any {
 	return map[string]any{
 		"name":        "check_package",
-		"description": "Vet a package for typosquats, known-malware, hallucinated names, and supply-chain risk BEFORE installing it. Returns SAFE, WARN, or BLOCK with reasons. Call this before running any package install.",
+		"description": "Vet a package for typosquats, known-malware, hallucinated names, and supply-chain risk BEFORE installing it. Returns SAFE, WARN, or BLOCK with reasons. Call this before running any package install. Set deep=true to also download the artifact and statically analyze install/build scripts (slower).",
 		"inputSchema": map[string]any{
 			"type": "object",
 			"properties": map[string]any{
 				"name":      map[string]any{"type": "string", "description": "package name to check"},
 				"version":   map[string]any{"type": "string", "description": "optional; defaults to the latest published version"},
 				"ecosystem": map[string]any{"type": "string", "enum": []string{"npm", "pypi", "crates"}, "default": "npm"},
+				"deep":      map[string]any{"type": "boolean", "description": "download the artifact and statically analyze install/build scripts (slower)"},
 			},
 			"required": []string{"name"},
 		},
@@ -32,6 +33,7 @@ func (s *Server) toolsCall(params json.RawMessage) map[string]any {
 			Name      string `json:"name"`
 			Version   string `json:"version"`
 			Ecosystem string `json:"ecosystem"`
+			Deep      bool   `json:"deep"`
 		} `json:"arguments"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil || p.Name != "check_package" {
@@ -48,7 +50,7 @@ func (s *Server) toolsCall(params json.RawMessage) map[string]any {
 	if err != nil {
 		return toolError(err.Error())
 	}
-	res := checker.Check(context.Background(), p.Arguments.Name, p.Arguments.Version)
+	res := checker.CheckWith(context.Background(), p.Arguments.Name, p.Arguments.Version, p.Arguments.Deep)
 	structured, _ := json.Marshal(res)
 	text := renderForAgent(res) + "\n\n" + string(structured)
 	return map[string]any{
