@@ -74,8 +74,8 @@ var denylist = map[string]map[string]bool{
    `InDenylist("npm", "your-new-entry")` returns `true`.
 4. Open a PR. Include a link to the public advisory or report.
 
-The denylist is the OSS, public-knowledge layer. The paid curated feed is a separate
-provider — do not add speculative or unconfirmed entries here.
+The denylist is a public-knowledge layer of confirmed-malicious names — do not add
+speculative or unconfirmed entries here.
 
 ---
 

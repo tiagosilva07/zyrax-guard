@@ -2,8 +2,8 @@
 // bundled denylist of known-malicious package names (seed; grow via PRs).
 package intel
 
-// denylist maps ecosystem -> set of known-malicious names. Seeded small; this is
-// the OSS, public-knowledge list (the paid curated feed is a separate provider).
+// denylist maps ecosystem -> set of known-malicious names. Seeded small; a
+// public-knowledge list of confirmed-malicious package names (grow via PRs).
 var denylist = map[string]map[string]bool{
 	"npm": {
 		// Examples of historically malicious typo/confusion names. Extend via PR.
