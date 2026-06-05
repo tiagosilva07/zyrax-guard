@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -47,7 +48,11 @@ func (o *OSV) Lookup(ctx context.Context, ecosystem, name, version string) ([]se
 	}
 	advs, err := o.query(ctx, body)
 	if err != nil {
-		return out, err
+		// OSV is a best-effort supplement; the bundled denylist is the
+		// authoritative floor. Tolerate OSV downtime rather than failing the
+		// whole check (v1 limitation: OSV-only malware is missed while OSV is
+		// unreachable — the paid curated feed addresses this).
+		return out, nil
 	}
 	return append(out, advs...), nil
 }
@@ -62,8 +67,11 @@ func (o *OSV) query(ctx context.Context, body map[string]any) ([]seam.Advisory, 
 	}
 	req.Header.Set("Content-Type", "application/json")
 	code, raw, err := o.http.PostJSON(req)
-	if err != nil || code != 200 {
+	if err != nil {
 		return nil, err
+	}
+	if code != 200 {
+		return nil, fmt.Errorf("OSV responded with status %d", code)
 	}
 	var r osvResp
 	if err := json.Unmarshal(raw, &r); err != nil {
