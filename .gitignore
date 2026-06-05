@@ -3,3 +3,7 @@
 /invoke-guard.exe
 *.out
 .invoke/
+# npm artifacts that hook tests may create in temp/working dirs
+node_modules/
+package-lock.json
+package.json

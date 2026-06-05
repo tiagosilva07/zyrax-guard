@@ -153,19 +153,32 @@ a `.invoke/policy.json` deny entry forces BLOCK.
 AI agents sometimes hallucinate package names. Attackers pre-register those names with
 malware. Guard breaks that attack chain.
 
-**Today (v1):** Route agent installs through Guard instead of npm directly:
+**Native agent integration (MCP):** register Guard as a tool your agent can call, so it
+checks a package *before* it ever runs an install command:
 
 ```bash
-# Instead of: npm install <agent-suggested-pkg>
-invoke-guard install <agent-suggested-pkg>
+claude mcp add invoke-guard -- invoke-guard mcp
 ```
 
-Guard checks existence (hallucinated names → BLOCK), typosquats, and known-bad records
-before any install runs.
+The agent gets a `check_package` tool that returns SAFE / WARN / BLOCK with reasons.
+(Cursor / Windsurf: add an equivalent `mcpServers` entry running `invoke-guard mcp`.)
 
-**Roadmap (v1.1):** An MCP server (`check_package` tool) lets agents call Guard
-natively, and a shell hook auto-intercepts all `npm install` calls transparently via
-`invoke-guard init`.
+**Transparent shell hook:** gate every `npm install` automatically — add to your shell rc:
+
+```bash
+# ~/.bashrc or ~/.zshrc
+eval "$(invoke-guard init bash)"     # or: init zsh
+```
+```powershell
+# PowerShell $PROFILE
+Invoke-Expression (invoke-guard init powershell | Out-String)
+```
+
+The hook checks each newly added package and blocks a BLOCK before the real `npm` runs;
+non-install commands (`npm run`, `npm ci`, …) pass through untouched.
+
+**Or route installs manually:** `invoke-guard install <pkg>` checks, then installs only if
+nothing is blocked.
 
 ---
 
@@ -237,12 +250,9 @@ every release ships SLSA L3 provenance so you can verify the build chain yoursel
 
 Invoke Guard is **MIT-licensed, free forever for individuals and single-repository use.**
 
-The paid tier adds *data and org services*: a curated threat-intelligence feed, org-wide
-policy, a dashboard, and native push to the Invoke platform. The basic safety checks,
-the PR gate, and the SARIF/JSON output are not paywalled — now or ever.
-
-See `docs/INTEGRATION-INVOKE.md` for how to connect Guard's output to the Invoke
-supply-chain platform.
+A future paid tier will add *data and org-scale services* — a curated threat-intelligence
+feed, org-wide policy, and a dashboard. The basic safety checks, the PR gate, and the
+SARIF/JSON output are free and not paywalled — now or ever.
 
 ---
 
@@ -250,11 +260,11 @@ supply-chain platform.
 
 | Phase | Item |
 |---|---|
-| **v1** (now) | npm CLI + PR gate + JSON/SARIF + self-hardening + integration docs |
-| **v1.1** | MCP server (`check_package` tool) + shell-hook auto-intercept (`invoke-guard init`) |
+| **v1** | npm CLI + PR gate + JSON/SARIF + self-hardening |
+| **v1.1** (now) | MCP server (`check_package`) + shell-hook (`invoke-guard init`) — shipped |
 | **v1.2** | PyPI + crates providers |
 | **v1.3** | Deep/sandbox behavioral check (opt-in signal) |
-| **paid** | Curated threat feed, org policy, dashboard, native platform push |
+| **paid** | Curated threat feed, org policy, dashboard |
 
 None of the roadmap items require re-architecting v1 — they drop in via the existing
 `Ecosystem`, `ThreatIntel`, `Policy`, and `Reporter` seams.

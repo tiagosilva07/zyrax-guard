@@ -120,5 +120,7 @@ ecosystems may introduce intermediate values.
 
 ## SARIF output
 
-For the SARIF schema used by `--sarif`, see `INTEGRATION-INVOKE.md`. The SARIF output
-is a separate stable contract aligned with SARIF 2.1.0 and the Invoke platform importer.
+`--sarif` emits **SARIF 2.1.0** — a separate stable contract. Each finding maps to a
+`results[]` entry with `ruleId` (the check name), `level` (`error`/`warning`/`note` for
+BLOCK/WARN/info), and a `message.text`. It uploads directly to GitHub Code Scanning or any
+SARIF-aware tool.
