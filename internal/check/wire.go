@@ -30,10 +30,10 @@ func New(ecosystem, projectDir string) (*Orchestrator, error) {
 		hosts = []string{npm.RegistryHost, npm.DownloadsHost, intel.OSVHost}
 		eco = npm.New(httpx.New(hosts), data.PopularNPM())
 	case "pypi":
-		hosts = []string{pypi.RegistryHost, pypi.StatsHost, intel.OSVHost}
+		hosts = []string{pypi.RegistryHost, pypi.StatsHost, pypi.FilesHost, intel.OSVHost}
 		eco = pypi.New(httpx.New(hosts), data.PopularPyPI())
 	case "crates":
-		hosts = []string{crates.Host, intel.OSVHost}
+		hosts = []string{crates.Host, crates.StaticHost, intel.OSVHost}
 		eco = crates.New(httpx.New(hosts), data.PopularCrates())
 	default:
 		return nil, fmt.Errorf("unsupported ecosystem %q (use npm, pypi, or crates)", ecosystem)

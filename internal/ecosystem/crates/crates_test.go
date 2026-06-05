@@ -1,6 +1,9 @@
 package crates
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/http/httptest"
@@ -56,4 +59,38 @@ func TestExistsMetadataSendsUA(t *testing.T) {
 	if miss {
 		t.Fatal("nonexistent reported existing")
 	}
+}
+
+func TestCratesInstallCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/download") {
+			w.Write(crTarGz(t))
+			return
+		}
+		http.Error(w, "nf", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	p := New(httpx.New([]string{host}), nil)
+	p.base = srv.URL
+	files, err := p.InstallCode(context.Background(), "evil", "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := files["evil-1.0.0/build.rs"]; !ok {
+		t.Fatalf("expected build.rs: %v", files)
+	}
+}
+
+func crTarGz(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := "fn main(){ let _ = reqwest::blocking::get(\"http://x\"); }"
+	tw.WriteHeader(&tar.Header{Name: "evil-1.0.0/build.rs", Mode: 0o644, Size: int64(len(body)), Typeflag: tar.TypeReg})
+	tw.Write([]byte(body))
+	tw.Close()
+	gz.Close()
+	return buf.Bytes()
 }

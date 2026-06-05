@@ -12,10 +12,16 @@ import (
 
 type fakeChecker struct{ res verdict.Result }
 
-func (f fakeChecker) Check(_ context.Context, name, version string) verdict.Result {
+func (f fakeChecker) CheckWith(_ context.Context, name, version string, _ bool) verdict.Result {
 	r := f.res
 	r.Name, r.Version = name, version
 	return r
+}
+
+type checkFn func(context.Context, string, string, bool) verdict.Result
+
+func (f checkFn) CheckWith(c context.Context, n, v string, d bool) verdict.Result {
+	return f(c, n, v, d)
 }
 
 // run feeds each input line through the server and returns the decoded JSON-RPC
@@ -129,5 +135,21 @@ func TestToolsCallMissingName(t *testing.T) {
 	result := resps[0]["result"].(map[string]any)
 	if result["isError"] != true {
 		t.Errorf("missing name should be a tool error")
+	}
+}
+
+func TestToolsCallDeep(t *testing.T) {
+	var gotDeep bool
+	srv := &Server{Version: "test", Resolve: func(string) (Checker, error) {
+		return checkFn(func(_ context.Context, _, _ string, deep bool) verdict.Result {
+			gotDeep = deep
+			return verdict.Result{Verdict: verdict.Safe, VerdictStr: "SAFE"}
+		}), nil
+	}}
+	var out strings.Builder
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_package","arguments":{"name":"x","deep":true}}}` + "\n")
+	srv.Serve(in, &out)
+	if !gotDeep {
+		t.Error("deep arg not forwarded")
 	}
 }

@@ -41,6 +41,9 @@ type Ecosystem interface {
 	Metadata(ctx context.Context, name string) (Metadata, error)
 	PopularList() []string
 	Install(ctx context.Context, names []string, opts InstallOpts) error
+	// InstallCode returns the package's install/build-time code files (path->content)
+	// for static deep analysis. Empty map = no such code.
+	InstallCode(ctx context.Context, name, version string) (map[string]string, error)
 }
 
 // ThreatIntel returns known-bad records (OSV plus a bundled denylist).
