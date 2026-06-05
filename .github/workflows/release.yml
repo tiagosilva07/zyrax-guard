@@ -48,9 +48,15 @@ jobs:
           set -euo pipefail
           prerelease=""
           [[ "${GITHUB_REF_NAME}" == *-* ]] && prerelease="--prerelease"
+          # Dedupe: dist/invoke-guard-* also matches the .cosign.bundle and .spdx.json
+          # files, which dist/*.cosign.bundle matches too — passing a name twice makes
+          # `gh release create` fail with "asset already exists". sort -u collapses them.
+          mapfile -t assets < <(printf '%s\n' \
+            dist/invoke-guard-* dist/checksums.txt dist/*.cosign.bundle dist/invoke-guard.spdx.json \
+            | sort -u)
           gh release create "${GITHUB_REF_NAME}" \
             --repo "${GITHUB_REPOSITORY}" \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes \
             $prerelease \
-            dist/invoke-guard-* dist/checksums.txt dist/*.cosign.bundle dist/invoke-guard.spdx.json
+            "${assets[@]}"
