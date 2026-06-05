@@ -301,11 +301,15 @@ func cmdMCP(args []string) int {
 }
 
 func cmdInit(args []string) int {
-	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: invoke-guard init <bash|zsh|powershell>")
+	if len(args) < 1 || len(args) > 2 {
+		fmt.Fprintln(os.Stderr, "usage: invoke-guard init <bash|zsh|powershell> [npm|pip|cargo]")
 		return 2
 	}
-	snippet, err := hook.Snippet(args[0])
+	mgr := "npm"
+	if len(args) == 2 {
+		mgr = args[1]
+	}
+	snippet, err := hook.SnippetFor(args[0], mgr)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
