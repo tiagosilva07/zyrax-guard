@@ -1,9 +1,25 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
+
+func TestScanDeepContext(t *testing.T) {
+	// Without --deep, scan must not impose an overall deadline.
+	plain, cancel := scanDeepContext(context.Background(), false)
+	cancel()
+	if _, ok := plain.Deadline(); ok {
+		t.Fatal("non-deep scan should not impose a deadline")
+	}
+	// With --deep, scan bounds total wall-clock so a large diff can't run unbounded.
+	deep, cancel2 := scanDeepContext(context.Background(), true)
+	defer cancel2()
+	if _, ok := deep.Deadline(); !ok {
+		t.Fatal("deep scan should impose an overall deadline")
+	}
+}
 
 func TestExitCodeForVerdict(t *testing.T) {
 	if exitForVerdict("BLOCK", false) == 0 {

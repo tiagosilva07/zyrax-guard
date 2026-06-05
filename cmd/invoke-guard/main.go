@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/tiagosilva07/invoke-guard/internal/check"
 	"github.com/tiagosilva07/invoke-guard/internal/data"
@@ -275,13 +276,22 @@ func cmdScan(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
+	// With --deep, each added dep downloads + inspects its artifact (sequential).
+	// Bound the whole pass with an overall deadline so a large diff can't run
+	// unbounded in CI; once spent, remaining deps degrade to a metadata-only check
+	// (best-effort — a deadline never turns a SAFE/WARN into a false BLOCK).
+	ctx, cancel := scanDeepContext(context.Background(), *deep)
+	defer cancel()
 	var results []verdict.Result
 	for _, a := range added {
-		results = append(results, orch.CheckWith(context.Background(), a.Name, a.Version, *deep))
+		results = append(results, orch.CheckWith(ctx, a.Name, a.Version, *deep))
 	}
 	for _, c := range changed {
 		r := verdict.Decide(*eco, c.Name, c.Version, []verdict.Signal{check.LockfileIntegrity(c)})
 		results = append(results, r)
+	}
+	if *deep && ctx.Err() != nil {
+		fmt.Fprintf(os.Stderr, "note: --deep time budget (%s) exceeded; remaining packages were checked without deep analysis\n", scanDeepBudget)
 	}
 	reporterFor(*asJSON, *asSARIF).Report(results)
 	var verdicts []string
@@ -289,6 +299,21 @@ func cmdScan(args []string) int {
 		verdicts = append(verdicts, r.VerdictStr)
 	}
 	return scanExit(verdicts, *strict)
+}
+
+// scanDeepBudget caps the total wall-clock of a `scan --deep` pass. It's
+// generous for a typical PR diff (a handful of added deps) but stops a huge or
+// slow diff from hanging CI; remaining deps degrade to metadata-only checks.
+const scanDeepBudget = 3 * time.Minute
+
+// scanDeepContext returns the context scan uses for each package check. With
+// deep analysis it carries an overall deadline (scanDeepBudget); without it the
+// parent is returned unbounded. The caller must always invoke the returned cancel.
+func scanDeepContext(parent context.Context, deep bool) (context.Context, context.CancelFunc) {
+	if !deep {
+		return parent, func() {}
+	}
+	return context.WithTimeout(parent, scanDeepBudget)
 }
 
 func scanExit(verdicts []string, strict bool) int {

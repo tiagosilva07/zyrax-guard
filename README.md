@@ -176,6 +176,11 @@ script and run it"). It runs **no code** (purely static) and is **best-effort**:
 artifact can't be fetched, you get an informational note, never a false block. Agents can pass
 `deep: true` to the `check_package` MCP tool.
 
+`scan --deep` downloads and inspects each **added** dependency in turn, so its cost scales with
+the size of the diff. The whole pass is bounded by an overall time budget (3 minutes); on a very
+large diff any packages past the budget fall back to a metadata-only check (you'll see a note on
+stderr).
+
 Zero added dependencies — the extractor uses stdlib `archive/tar` + `compress/gzip` only.
 
 ---
