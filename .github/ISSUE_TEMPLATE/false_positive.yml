@@ -1,0 +1,62 @@
+name: False positive / false negative
+description: Zyrax Guard flagged a safe package, or missed a malicious one
+labels: ["false-positive"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template when Zyrax Guard gives a **wrong verdict** — either blocking a package that is safe, or passing one that is malicious.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type of report
+      options:
+        - "False positive — BLOCK or WARN on a safe package"
+        - "False negative — SAFE on a package that is malicious"
+    validations:
+      required: true
+
+  - type: input
+    id: package
+    attributes:
+      label: Package name
+      placeholder: "e.g. lodash"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ecosystem
+    attributes:
+      label: Ecosystem
+      options:
+        - npm
+        - PyPI
+        - crates.io
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      placeholder: "e.g. 4.18.1, or 'latest'"
+    validations:
+      required: true
+
+  - type: textarea
+    id: verdict
+    attributes:
+      label: Verdict Zyrax Guard gave
+      description: Paste the full output of `zyrax-guard check <package>`.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why you think the verdict is wrong
+      description: Link to the package page, advisory, or any evidence.
+    validations:
+      required: true
