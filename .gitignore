@@ -1,0 +1,12 @@
+/dist/
+/zyrax-guard
+/zyrax-guard.exe
+*.out
+.zyrax/
+# npm artifacts that hook tests may create in temp/working dirs
+node_modules/
+package-lock.json
+package.json
+
+# internal planning docs — not published
+docs/superpowers/

@@ -1,0 +1,23 @@
+name: Zyrax Guard
+description: Vet dependencies a PR adds or changes, before they reach main.
+inputs:
+  strict:
+    description: Treat warnings as failures
+    default: "true"
+  ecosystem:
+    description: npm | pypi | crates
+    default: "npm"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        declare -A LOCK=( [npm]=package-lock.json [crates]=Cargo.lock [pypi]=poetry.lock )
+        f="${LOCK[${{ inputs.ecosystem }}]}"
+        git fetch origin "${{ github.base_ref }}" --depth=1 || true
+        git show "origin/${{ github.base_ref }}:$f" > /tmp/base-lock 2>/dev/null || : > /tmp/base-lock
+        STRICT=""; [ "${{ inputs.strict }}" = "true" ] && STRICT="--strict"
+        zyrax-guard scan --ecosystem "${{ inputs.ecosystem }}" --base /tmp/base-lock --head "$f" --sarif $STRICT > guard.sarif || EXIT=$?
+        cat guard.sarif
+        exit "${EXIT:-0}"
