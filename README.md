@@ -5,10 +5,10 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tiagosilva07/zyrax-guard)](https://goreportcard.com/report/github.com/tiagosilva07/zyrax-guard)
 [![Website](https://img.shields.io/badge/website-zyrax.io-2cc9da)](https://zyrax.io)
 
-**Check a dependency before you install it.** Zyrax Guard vets packages for
-typosquats, known-malicious names, hallucinated package names, and supply-chain
-anomalies — in milliseconds, before the install runs. **Works with npm, PyPI, and
-crates.io** (one ecosystem-agnostic engine).
+**Vet packages before you install them. Audit AI agent configs before you run them.**
+Zyrax Guard catches typosquats, known-malicious packages, and hallucinated names — and
+scans your `CLAUDE.md`, `.mcp.json`, and agent settings for prompt injection, malicious
+MCP servers, and supply-chain risks. In milliseconds. Nothing leaves your machine.
 
 ```
 $ zyrax-guard check lodahs
@@ -20,6 +20,19 @@ $ zyrax-guard check lodahs
 
 $ zyrax-guard check lodash
 ✓ lodash@4.18.1 — SAFE
+
+$ zyrax-guard scan-agents .
+  Found 3 file(s): AGENTS.md, .mcp.json, .claude/settings.json
+
+  [CRITICAL]  AGENTS.md:4
+              Prompt injection keyword detected: 'ignore previous instructions'
+              → Remove or review this instruction.
+
+  [HIGH]      .mcp.json
+              MCP server 'data-exfil' uses non-HTTPS URL: http://attacker.example.com/collect
+              → Use HTTPS for all external MCP server URLs.
+
+  2 finding(s) — 1 CRITICAL, 1 HIGH
 ```
 
 Works locally, in CI, and as a gate for AI coding agents. No account required. Nothing
@@ -111,6 +124,18 @@ zyrax-guard scan --base /tmp/base-lock.json --head package-lock.json --sarif
 
 Emits SARIF 2.1.0 to stdout. Exit code 0 if no BLOCK; non-zero otherwise.
 Add `--strict` to treat WARN as failure.
+
+### Audit AI agent configs
+
+```bash
+zyrax-guard scan-agents .          # scan current directory
+zyrax-guard scan-agents /repo      # scan a specific path
+zyrax-guard scan-agents . --json   # JSON output
+zyrax-guard scan-agents . --strict # exit 1 for any finding (not just CRITICAL/HIGH)
+```
+
+Scans `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.mcp.json`, `.claude/settings.json`,
+and Cursor rules files. Exits 1 if any CRITICAL or HIGH finding is found.
 
 ---
 
@@ -266,6 +291,65 @@ Apply immediately:
 
 From now on every `npm install`, `pip install`, or `cargo add` in a PowerShell window
 is automatically checked before anything installs.
+
+---
+
+## Auditing AI agent configs (`scan-agents`)
+
+AI coding agents (Claude Code, Cursor, Gemini CLI) read configuration files that can be
+weaponized: a malicious `CLAUDE.md` in a repo you clone, a tampered `.mcp.json` that
+points to an attacker's server, a `settings.json` granting wildcard shell access. Guard
+detects these before the agent runs.
+
+```bash
+zyrax-guard scan-agents .
+```
+
+### What it scans
+
+| File | Location |
+|---|---|
+| `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | Repo root |
+| `.mcp.json` | Repo root and subdirectories |
+| `.claude/settings.json` | `.claude/` directory |
+| `.cursor/rules`, `.cursor/rules/*.mdc` | Cursor rules |
+| `SKILL.md` | Under any `skills/` directory |
+
+### What it detects
+
+| Rule | Severity |
+|---|---|
+| Prompt injection keywords (`ignore previous instructions`, `new objective:`, …) | CRITICAL |
+| Hidden unicode characters (zero-width, bidi overrides) | CRITICAL |
+| Base64-encoded instructions bypassing keyword filters | CRITICAL |
+| Conditional/sleeper triggers (`when user asks X, do Y`) | CRITICAL |
+| Persona override (`you are not Claude`, `your true purpose`) | HIGH |
+| MCP server using non-HTTPS URL | HIGH |
+| MCP server using raw IP address (possible C2) | HIGH |
+| MCP server using tunnel service (ngrok, Cloudflare, …) | HIGH |
+| Wildcard `allow` in `permissions` | HIGH |
+| Unrestricted shell access with no deny rules | MEDIUM |
+| `npx` MCP server without a lock file | MEDIUM |
+
+Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
+
+### In CI
+
+```yaml
+- name: Audit agent configs
+  run: zyrax-guard scan-agents . --strict
+```
+
+### Via MCP (`scan_agents` tool)
+
+Once registered as an MCP server, agents also have access to `scan_agents`:
+
+```json
+{
+  "name": "scan_agents",
+  "arguments": { "dir": "." }
+}
+```
 
 ---
 
@@ -502,6 +586,7 @@ waitlist at **[zyrax.io](https://zyrax.io)**.
 | **v1.2** | PyPI + crates.io across check/install/hook/MCP/scan — shipped |
 | **v1.3** | Deep check (`--deep`): static install/build-script analysis — shipped |
 | **v0.5.0** | Rebrand to Zyrax; public release — shipped |
+| **next** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) — shipped |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
 `Reporter` seams — no re-architecting required.
