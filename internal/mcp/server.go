@@ -81,7 +81,7 @@ func (s *Server) dispatch(req *rpcRequest) (rpcResponse, bool) {
 	case "notifications/initialized":
 		return rpcResponse{}, false
 	case "tools/list":
-		return s.ok(req.ID, map[string]any{"tools": []any{checkPackageTool()}}), true
+		return s.ok(req.ID, map[string]any{"tools": []any{checkPackageTool(), scanAgentsTool()}}), true
 	case "tools/call":
 		return s.ok(req.ID, s.toolsCall(req.Params)), true
 	default:

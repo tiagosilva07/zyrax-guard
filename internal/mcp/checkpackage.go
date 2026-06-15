@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
 )
 
@@ -26,23 +27,48 @@ func checkPackageTool() map[string]any {
 	}
 }
 
+func scanAgentsTool() map[string]any {
+	return map[string]any{
+		"name":        "scan_agents",
+		"description": "Audit a directory for AI agent security risks: prompt injection in CLAUDE.md/AGENTS.md/GEMINI.md, malicious or unencrypted MCP server URLs, excessive permissions in settings.json, and supply-chain risks from unpinned npx MCP packages. Call this before running an agent in an unfamiliar repo, or in CI to gate agent config changes.",
+		"inputSchema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"dir": map[string]any{"type": "string", "description": "directory to scan (default: current working directory)"},
+			},
+		},
+	}
+}
+
 func (s *Server) toolsCall(params json.RawMessage) map[string]any {
 	var p struct {
+		Name      string          `json:"name"`
+		Arguments json.RawMessage `json:"arguments"`
+	}
+	if err := json.Unmarshal(params, &p); err != nil {
+		return toolError("bad arguments")
+	}
+	switch p.Name {
+	case "check_package":
+		return s.callCheckPackage(p.Arguments)
+	case "scan_agents":
+		return s.callScanAgents(p.Arguments)
+	default:
+		return toolError("unknown tool: " + p.Name)
+	}
+}
+
+func (s *Server) callCheckPackage(raw json.RawMessage) map[string]any {
+	var args struct {
 		Name      string `json:"name"`
-		Arguments struct {
-			Name      string `json:"name"`
-			Version   string `json:"version"`
-			Ecosystem string `json:"ecosystem"`
-			Deep      bool   `json:"deep"`
-		} `json:"arguments"`
+		Version   string `json:"version"`
+		Ecosystem string `json:"ecosystem"`
+		Deep      bool   `json:"deep"`
 	}
-	if err := json.Unmarshal(params, &p); err != nil || p.Name != "check_package" {
-		return toolError("unknown tool or bad arguments")
-	}
-	if strings.TrimSpace(p.Arguments.Name) == "" {
+	if err := json.Unmarshal(raw, &args); err != nil || strings.TrimSpace(args.Name) == "" {
 		return toolError("missing required argument: name")
 	}
-	eco := p.Arguments.Ecosystem
+	eco := args.Ecosystem
 	if eco == "" {
 		eco = "npm"
 	}
@@ -50,12 +76,53 @@ func (s *Server) toolsCall(params json.RawMessage) map[string]any {
 	if err != nil {
 		return toolError(err.Error())
 	}
-	res := checker.CheckWith(context.Background(), p.Arguments.Name, p.Arguments.Version, p.Arguments.Deep)
+	res := checker.CheckWith(context.Background(), args.Name, args.Version, args.Deep)
 	structured, _ := json.Marshal(res)
 	text := renderForAgent(res) + "\n\n" + string(structured)
 	return map[string]any{
 		"content": []any{map[string]any{"type": "text", "text": text}},
-		"isError": false, // a SAFE/WARN/BLOCK verdict is a valid result, never a tool error
+		"isError": false,
+	}
+}
+
+func (s *Server) callScanAgents(raw json.RawMessage) map[string]any {
+	var args struct {
+		Dir string `json:"dir"`
+	}
+	_ = json.Unmarshal(raw, &args)
+	dir := args.Dir
+	if dir == "" {
+		dir = "."
+	}
+	findings, files, err := agentsec.ScanDir(dir)
+	if err != nil {
+		return toolError("scan-agents: " + err.Error())
+	}
+	type out struct {
+		Dir      string             `json:"dir"`
+		Files    []string           `json:"files_scanned"`
+		Findings []agentsec.Finding `json:"findings"`
+	}
+	result, _ := json.MarshalIndent(out{Dir: dir, Files: files, Findings: findings}, "", "  ")
+	var summary string
+	if len(findings) == 0 {
+		summary = fmt.Sprintf("No issues found in %d file(s). Agent configs look clean.", len(files))
+	} else {
+		counts := map[string]int{}
+		for _, f := range findings {
+			counts[f.Severity]++
+		}
+		summary = fmt.Sprintf("%d finding(s) in %d file(s) — review and remediate before running agents in this repo.", len(findings), len(files))
+		for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM"} {
+			if n := counts[sev]; n > 0 {
+				summary += fmt.Sprintf(" %d %s.", n, sev)
+			}
+		}
+	}
+	text := summary + "\n\n" + string(result)
+	return map[string]any{
+		"content": []any{map[string]any{"type": "text", "text": text}},
+		"isError": false,
 	}
 }
 
