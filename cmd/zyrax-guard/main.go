@@ -388,8 +388,8 @@ func cmdScanAgents(args []string) int {
 
 	if *asJSON {
 		type jsonOut struct {
-			Dir      string            `json:"dir"`
-			Files    []string          `json:"files_scanned"`
+			Dir      string             `json:"dir"`
+			Files    []string           `json:"files_scanned"`
 			Findings []agentsec.Finding `json:"findings"`
 		}
 		enc := json.NewEncoder(os.Stdout)
@@ -432,30 +432,16 @@ func cmdScanAgents(args []string) int {
 		fmt.Fprintf(os.Stdout, "           → %s\n\n", f.Remediation)
 	}
 
-	counts := map[string]int{}
-	for _, f := range findings {
-		counts[f.Severity]++
-	}
-	summary := fmt.Sprintf("%d finding(s)", len(findings))
-	parts := []string{}
-	for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM", "LOW"} {
-		if n := counts[sev]; n > 0 {
-			parts = append(parts, fmt.Sprintf("%d %s", n, sev))
-		}
-	}
-	if len(parts) > 0 {
-		summary += " — " + strings.Join(parts, ", ")
-	}
-	fmt.Fprintf(os.Stdout, "  %s%s%s\n\n", red, summary, reset)
+	fmt.Fprintf(os.Stdout, "  %s%s%s\n\n", red, agentsec.SummaryLine(findings), reset)
 
 	return agentScanExit(findings, *strict)
 }
 
 func agentScanExit(findings []agentsec.Finding, strict bool) int {
+	if strict && len(findings) > 0 {
+		return 1
+	}
 	for _, f := range findings {
-		if strict {
-			return 1
-		}
 		if f.Severity == "CRITICAL" || f.Severity == "HIGH" {
 			return 1
 		}

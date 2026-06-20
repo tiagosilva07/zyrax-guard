@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
@@ -94,7 +96,18 @@ func (s *Server) callScanAgents(raw json.RawMessage) map[string]any {
 	if dir == "" {
 		dir = "."
 	}
-	findings, files, err := agentsec.ScanDir(dir)
+	absDir, err := filepath.Abs(dir)
+	if err != nil {
+		return toolError("invalid dir: " + err.Error())
+	}
+	fi, err := os.Stat(absDir)
+	if err != nil {
+		return toolError("cannot access dir: " + err.Error())
+	}
+	if !fi.IsDir() {
+		return toolError("dir is not a directory: " + absDir)
+	}
+	findings, files, err := agentsec.ScanDir(absDir)
 	if err != nil {
 		return toolError("scan-agents: " + err.Error())
 	}
@@ -108,10 +121,7 @@ func (s *Server) callScanAgents(raw json.RawMessage) map[string]any {
 	if len(findings) == 0 {
 		summary = fmt.Sprintf("No issues found in %d file(s). Agent configs look clean.", len(files))
 	} else {
-		counts := map[string]int{}
-		for _, f := range findings {
-			counts[f.Severity]++
-		}
+		counts := agentsec.CountBySeverity(findings)
 		summary = fmt.Sprintf("%d finding(s) in %d file(s) — review and remediate before running agents in this repo.", len(findings), len(files))
 		for _, sev := range []string{"CRITICAL", "HIGH", "MEDIUM"} {
 			if n := counts[sev]; n > 0 {
