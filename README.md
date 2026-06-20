@@ -242,6 +242,58 @@ Zero added dependencies — the extractor uses stdlib `archive/tar` + `compress/
 
 ---
 
+## Configuration
+
+Zyrax Guard is configured entirely through command flags and an optional local
+policy file — no config file or environment variables required.
+
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `check <name>[@version]` | Vet a single package |
+| `install <name>` | Check, then install if safe |
+| `scan` | Vet a lockfile (or a PR's lockfile diff) |
+| `scan-agents <dir>` | Audit AI agent config files |
+| `allow <name>` | Add a package to the local allowlist |
+| `init` | Print the shell hook (gate installs transparently) |
+| `mcp` | Run the MCP server (`check_package`, `scan_agents`) |
+
+### Flags
+
+| Flag | Commands | Default | Effect |
+|---|---|---|---|
+| `--ecosystem npm\|pypi\|crates` | check, install, scan | `npm` | Target package ecosystem |
+| `--strict` | check, install, scan, scan-agents | off | Tighten failure: WARN → fail (package commands); any finding → fail (`scan-agents`) |
+| `--deep` | check, install, scan | off | Download + statically analyze install/build scripts |
+| `--json` | check, scan, scan-agents | off | JSON output |
+| `--sarif` | check, scan | off | SARIF 2.1.0 output (for code-scanning ingestion) |
+| `--ignore-scripts` | install | off | Pass `--ignore-scripts` through to npm |
+| `--base <file>` | scan | — | Base lockfile to diff against (scan only added/changed deps) |
+| `--head <file>` | scan | `package-lock.json` | Head lockfile to scan |
+
+### Local policy file
+
+`zyrax-guard allow <name>` records decisions in `.zyrax/policy.json` at the project root:
+
+```json
+{ "allow": ["my-internal-pkg"], "deny": ["known-bad-pkg"] }
+```
+
+Allowlisted packages skip checks; denylisted packages always BLOCK. Commit the file to
+share policy across a team. (Org-wide policy is a paid drop-in via the `Policy` seam.)
+
+### Exit codes
+
+| Context | Exits `1` when |
+|---|---|
+| `check` / `install` / `scan` | a **BLOCK** verdict — or a **WARN** with `--strict` |
+| `scan-agents` | a **CRITICAL** or **HIGH** finding — or **any** finding with `--strict` |
+
+See [The three verdicts](#the-three-verdicts) for package verdict meanings.
+
+---
+
 ## Make it automatic — shell hook
 
 The shell hook intercepts `npm install` / `pip install` / `cargo add` transparently.
@@ -298,8 +350,9 @@ is automatically checked before anything installs.
 
 AI coding agents (Claude Code, Cursor, Gemini CLI) read configuration files that can be
 weaponized: a malicious `CLAUDE.md` in a repo you clone, a tampered `.mcp.json` that
-points to an attacker's server, a `settings.json` granting wildcard shell access. Guard
-detects these before the agent runs.
+points to an attacker's server, an MCP tool whose description hides instructions, a
+`settings.json` granting wildcard shell access, or prose that quietly steers the agent
+toward reading `.env` and POSTing it out. Guard detects these before the agent runs.
 
 ```bash
 zyrax-guard scan-agents .
@@ -323,13 +376,18 @@ zyrax-guard scan-agents .
 | Hidden unicode characters (zero-width, bidi overrides) | CRITICAL |
 | Base64-encoded instructions bypassing keyword filters | CRITICAL |
 | Conditional/sleeper triggers (`when user asks X, do Y`) | CRITICAL |
+| MCP tool description carrying injection keywords (read as trusted model context) | CRITICAL |
 | Persona override (`you are not Claude`, `your true purpose`) | HIGH |
 | MCP server using non-HTTPS URL | HIGH |
 | MCP server using raw IP address (possible C2) | HIGH |
 | MCP server using tunnel service (ngrok, Cloudflare, …) | HIGH |
+| MCP server running a shell, inline `-c`/`-e`, temp-dir binary, or dangerous env var | HIGH |
+| Instruction referencing credential files (`.env`, `id_rsa`, `.aws/credentials`) | HIGH |
+| Exfiltration sink (`send`/`POST`/`curl` + external URL on one line) | HIGH |
 | Wildcard `allow` in `permissions` | HIGH |
 | Unrestricted shell access with no deny rules | MEDIUM |
 | `npx` MCP server without a lock file | MEDIUM |
+| Auto-run hooks executing commands (download-execute → CRITICAL, shell flag → HIGH) | CRITICAL–MEDIUM |
 
 Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
 
@@ -579,14 +637,17 @@ waitlist at **[zyrax.io](https://zyrax.io)**.
 
 ## Roadmap
 
-| Phase | Item |
-|---|---|
-| **v1** | npm CLI + PR gate + JSON/SARIF + self-hardening — shipped |
-| **v1.1** | MCP server (`check_package`) + shell-hook (`zyrax-guard init`) — shipped |
-| **v1.2** | PyPI + crates.io across check/install/hook/MCP/scan — shipped |
-| **v1.3** | Deep check (`--deep`): static install/build-script analysis — shipped |
-| **v0.5.0** | Rebrand to Zyrax; public release — shipped |
-| **next** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) — shipped |
+| Version | Item | Status |
+|---|---|---|
+| **v0.1.0** | npm CLI: `check` + PR-gate `scan` (lockfile diff) + JSON/SARIF + self-hardening CI | shipped |
+| **v0.2.0** | MCP server (`check_package`) + shell-hook (`zyrax-guard init`) | shipped |
+| **v0.3.0** | PyPI + crates.io parity across check/install/hook/MCP/scan | shipped |
+| **v0.4.x** | Deep check (`--deep`): static install/build-script analysis + overall time budget | shipped |
+| **v0.5.0** | Rebrand to Zyrax; public release | shipped |
+| **v0.6.x** | GitHub Action + Marketplace listing + `curl\|sh` installer; floating `@v0` tag | shipped |
+| **v0.7.0** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) + Phase 2 detections (credential access, exfiltration sinks, MCP tool-description injection) | shipped |
+| **v0.8 (next)** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | planned |
+| **exploring** | Community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
 `Reporter` seams — no re-architecting required.
