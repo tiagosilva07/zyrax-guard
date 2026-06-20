@@ -14,9 +14,9 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with: { go-version: "1.26" }
       - run: go install github.com/tiagosilva07/zyrax-guard/cmd/zyrax-guard@latest
       - name: Guard new dependencies

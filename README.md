@@ -151,7 +151,7 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0          # lets Guard diff against the PR base (added deps only)
       - uses: tiagosilva07/zyrax-guard@v0
@@ -161,7 +161,7 @@ jobs:
 
 On a pull request it scans only the dependencies added versus the base branch; otherwise
 it scans the whole lockfile. The job fails when a dependency is blocked. `@v0` tracks the
-latest 0.x release; pin an exact version (e.g. `@v0.6.0`) for fully reproducible CI.
+latest 0.x release; pin an exact version (e.g. `@v0.7.1`) for fully reproducible CI.
 
 **Inputs** (all optional): `ecosystem` (default `npm`), `lockfile` (default per-ecosystem),
 `base` (explicit base lockfile), `strict` (treat WARN as failure), `deep` (inspect install
