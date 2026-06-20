@@ -1,16 +1,18 @@
-// Command zyrax-guard vets dependencies before install. Subcommands: check,
-// install, allow, scan. Exit 0 for SAFE/WARN; non-zero for BLOCK (and for WARN
-// under --strict).
+// Command zyrax-guard vets dependencies before install and audits AI agent configs.
+// Subcommands: check, install, allow, scan, scan-agents, mcp, init.
+// Exit 0 for SAFE/WARN; non-zero for BLOCK (and for WARN under --strict).
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
 	"github.com/tiagosilva07/zyrax-guard/internal/check"
 	"github.com/tiagosilva07/zyrax-guard/internal/data"
 	"github.com/tiagosilva07/zyrax-guard/internal/hook"
@@ -23,14 +25,15 @@ import (
 var version = "dev" // set via -ldflags at release
 
 func usage() string {
-	return `zyrax-guard — check a dependency before you install it
+	return `zyrax-guard — vet packages before install · audit AI agent configs before they run
 
 usage:
   zyrax-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict] [--deep]
   zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep]
   zyrax-guard allow <name>
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
-  zyrax-guard mcp                                  (MCP server for AI agents; stdio)
+  zyrax-guard scan-agents [dir] [--json] [--strict]         (audit CLAUDE.md, .mcp.json, settings.json, …)
+  zyrax-guard mcp                                           (MCP server for AI agents; stdio)
   zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
   zyrax-guard --version
 `
@@ -58,6 +61,8 @@ func run(args []string) int {
 		return cmdAllow(args[1:])
 	case "scan":
 		return cmdScan(args[1:])
+	case "scan-agents":
+		return cmdScanAgents(args[1:])
 	case "mcp":
 		return cmdMCP(args[1:])
 	case "init":
@@ -360,3 +365,93 @@ func cmdInit(args []string) int {
 }
 
 func loadPopular() []string { return data.PopularNPM() }
+
+// cmdScanAgents audits AI agent configuration files in a directory for prompt
+// injection, malicious MCP hosts, excessive permissions, and supply-chain risks.
+func cmdScanAgents(args []string) int {
+	fs := flag.NewFlagSet("scan-agents", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "JSON output")
+	strict := fs.Bool("strict", false, "exit 1 for any finding (default: exit 1 for CRITICAL/HIGH only)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	dir := "."
+	if fs.NArg() > 0 {
+		dir = fs.Arg(0)
+	}
+
+	findings, files, err := agentsec.ScanDir(dir)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "scan-agents:", err)
+		return 2
+	}
+
+	if *asJSON {
+		type jsonOut struct {
+			Dir      string             `json:"dir"`
+			Files    []string           `json:"files_scanned"`
+			Findings []agentsec.Finding `json:"findings"`
+		}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(jsonOut{Dir: dir, Files: files, Findings: findings})
+		return agentScanExit(findings, *strict)
+	}
+
+	color := term()
+	cyan := colorCode(color, "\x1b[36m")
+	reset := colorCode(color, "\x1b[0m")
+	red := colorCode(color, "\x1b[31m")
+	yellow := colorCode(color, "\x1b[33m")
+	green := colorCode(color, "\x1b[32m")
+
+	fmt.Fprintf(os.Stdout, "\nScanning %s for agent config files...\n", dir)
+	if len(files) == 0 {
+		fmt.Fprintln(os.Stdout, "  No agent config files found (CLAUDE.md, .mcp.json, AGENTS.md, etc.)")
+		return 0
+	}
+	fmt.Fprintf(os.Stdout, "  %sFound %d file(s):%s %s\n\n", cyan, len(files), reset, strings.Join(files, ", "))
+
+	if len(findings) == 0 {
+		fmt.Fprintf(os.Stdout, "  %s✓ No issues found%s\n\n", green, reset)
+		return 0
+	}
+
+	for _, f := range findings {
+		sev := f.Severity
+		col := yellow
+		if sev == "CRITICAL" || sev == "HIGH" {
+			col = red
+		}
+		loc := f.FilePath
+		if f.Line > 0 {
+			loc = fmt.Sprintf("%s:%d", f.FilePath, f.Line)
+		}
+		fmt.Fprintf(os.Stdout, "  %s[%s]%s  %s\n", col, sev, reset, loc)
+		fmt.Fprintf(os.Stdout, "           %s\n", f.Message)
+		fmt.Fprintf(os.Stdout, "           → %s\n\n", f.Remediation)
+	}
+
+	fmt.Fprintf(os.Stdout, "  %s%s%s\n\n", red, agentsec.SummaryLine(findings), reset)
+
+	return agentScanExit(findings, *strict)
+}
+
+func agentScanExit(findings []agentsec.Finding, strict bool) int {
+	if strict && len(findings) > 0 {
+		return 1
+	}
+	for _, f := range findings {
+		if f.Severity == "CRITICAL" || f.Severity == "HIGH" {
+			return 1
+		}
+	}
+	return 0
+}
+
+func colorCode(enabled bool, code string) string {
+	if enabled {
+		return code
+	}
+	return ""
+}

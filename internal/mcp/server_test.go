@@ -82,7 +82,14 @@ func TestInitializeAndToolsList(t *testing.T) {
 		t.Errorf("serverInfo.name wrong: %v", init["serverInfo"])
 	}
 	tools := resps[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tools) != 1 || tools[0].(map[string]any)["name"] != "check_package" {
+	if len(tools) != 2 {
+		t.Errorf("expected 2 tools, got %d: %v", len(tools), tools)
+	}
+	toolNames := map[string]bool{}
+	for _, tool := range tools {
+		toolNames[tool.(map[string]any)["name"].(string)] = true
+	}
+	if !toolNames["check_package"] || !toolNames["scan_agents"] {
 		t.Errorf("tools/list wrong: %v", tools)
 	}
 }
