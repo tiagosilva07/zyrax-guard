@@ -298,8 +298,9 @@ is automatically checked before anything installs.
 
 AI coding agents (Claude Code, Cursor, Gemini CLI) read configuration files that can be
 weaponized: a malicious `CLAUDE.md` in a repo you clone, a tampered `.mcp.json` that
-points to an attacker's server, a `settings.json` granting wildcard shell access. Guard
-detects these before the agent runs.
+points to an attacker's server, an MCP tool whose description hides instructions, a
+`settings.json` granting wildcard shell access, or prose that quietly steers the agent
+toward reading `.env` and POSTing it out. Guard detects these before the agent runs.
 
 ```bash
 zyrax-guard scan-agents .
@@ -323,13 +324,18 @@ zyrax-guard scan-agents .
 | Hidden unicode characters (zero-width, bidi overrides) | CRITICAL |
 | Base64-encoded instructions bypassing keyword filters | CRITICAL |
 | Conditional/sleeper triggers (`when user asks X, do Y`) | CRITICAL |
+| MCP tool description carrying injection keywords (read as trusted model context) | CRITICAL |
 | Persona override (`you are not Claude`, `your true purpose`) | HIGH |
 | MCP server using non-HTTPS URL | HIGH |
 | MCP server using raw IP address (possible C2) | HIGH |
 | MCP server using tunnel service (ngrok, Cloudflare, …) | HIGH |
+| MCP server running a shell, inline `-c`/`-e`, temp-dir binary, or dangerous env var | HIGH |
+| Instruction referencing credential files (`.env`, `id_rsa`, `.aws/credentials`) | HIGH |
+| Exfiltration sink (`send`/`POST`/`curl` + external URL on one line) | HIGH |
 | Wildcard `allow` in `permissions` | HIGH |
 | Unrestricted shell access with no deny rules | MEDIUM |
 | `npx` MCP server without a lock file | MEDIUM |
+| Auto-run hooks executing commands (download-execute → CRITICAL, shell flag → HIGH) | CRITICAL–MEDIUM |
 
 Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
 
