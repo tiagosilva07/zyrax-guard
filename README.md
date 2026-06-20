@@ -585,14 +585,14 @@ waitlist at **[zyrax.io](https://zyrax.io)**.
 
 ## Roadmap
 
-| Phase | Item |
-|---|---|
-| **v1** | npm CLI + PR gate + JSON/SARIF + self-hardening — shipped |
-| **v1.1** | MCP server (`check_package`) + shell-hook (`zyrax-guard init`) — shipped |
-| **v1.2** | PyPI + crates.io across check/install/hook/MCP/scan — shipped |
-| **v1.3** | Deep check (`--deep`): static install/build-script analysis — shipped |
-| **v0.5.0** | Rebrand to Zyrax; public release — shipped |
-| **next** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) — shipped |
+| Version | Item | Status |
+|---|---|---|
+| **v0.1–v0.4** | npm CLI + PR gate + JSON/SARIF + self-hardening; MCP server (`check_package`) + shell-hook (`zyrax-guard init`); PyPI + crates.io across check/install/hook/MCP/scan; deep check (`--deep`) static install/build-script analysis | shipped |
+| **v0.5.0** | Rebrand to Zyrax; public release | shipped |
+| **v0.6.x** | GitHub Action + Marketplace listing; floating `@v0` tag | shipped |
+| **v0.7.0** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) + Phase 2 detections (credential access, exfiltration sinks, MCP tool-description injection) | shipped |
+| **v0.8 (next)** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | planned |
+| **exploring** | Community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
 `Reporter` seams — no re-architecting required.
