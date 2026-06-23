@@ -30,8 +30,12 @@ gh release download "v$VERSION" --repo tiagosilva07/zyrax-guard --dir dist --pat
 node scripts/build-npm.mjs "$VERSION" dist
 for d in npm/platforms/*/; do npm publish "$d" --access public --provenance; done
 npm publish npm/zyrax-guard --access public --provenance
-# MCP registry:
-curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+# MCP registry — pin mcp-publisher to a version and verify its checksum (never use /releases/latest).
+# Look up the checksum in registry_<ver>_checksums.txt on the release, then:
+MCP_PUB=v1.7.9
+curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUB}/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz"
+# verify: echo "<sha256>  mcp-publisher.tar.gz" | sha256sum -c -
+tar xzf mcp-publisher.tar.gz mcp-publisher && rm -f mcp-publisher.tar.gz
 node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('server.json','utf8'));s.version='$VERSION';s.packages[0].version='$VERSION';fs.writeFileSync('server.json',JSON.stringify(s,null,2)+'\n')"
 ./mcp-publisher login github      # or: ./mcp-publisher login github-oidc (in CI)
 ./mcp-publisher publish
