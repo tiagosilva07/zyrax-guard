@@ -90,6 +90,18 @@ go build -o zyrax-guard ./cmd/zyrax-guard
 
 ## Quickstart
 
+### Audit AI agent configs
+
+```bash
+zyrax-guard scan-agents .          # scan current directory
+zyrax-guard scan-agents /repo      # scan a specific path
+zyrax-guard scan-agents . --json   # JSON output
+zyrax-guard scan-agents . --strict # exit 1 for any finding (not just CRITICAL/HIGH)
+```
+
+Scans `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.mcp.json`, `.claude/settings.json`,
+and Cursor rules files. Exits 1 if any CRITICAL or HIGH finding is found.
+
 ### Check a single package
 
 ```bash
@@ -124,17 +136,70 @@ zyrax-guard scan --base /tmp/base-lock.json --head package-lock.json --sarif
 Emits SARIF 2.1.0 to stdout. Exit code 0 if no BLOCK; non-zero otherwise.
 Add `--strict` to treat WARN as failure.
 
-### Audit AI agent configs
+---
+
+## Auditing AI agent configs (`scan-agents`)
+
+AI coding agents (Claude Code, Cursor, Gemini CLI) read configuration files that can be
+weaponized: a malicious `CLAUDE.md` in a repo you clone, a tampered `.mcp.json` that
+points to an attacker's server, an MCP tool whose description hides instructions, a
+`settings.json` granting wildcard shell access, or prose that quietly steers the agent
+toward reading `.env` and POSTing it out. Guard detects these before the agent runs.
 
 ```bash
-zyrax-guard scan-agents .          # scan current directory
-zyrax-guard scan-agents /repo      # scan a specific path
-zyrax-guard scan-agents . --json   # JSON output
-zyrax-guard scan-agents . --strict # exit 1 for any finding (not just CRITICAL/HIGH)
+zyrax-guard scan-agents .
 ```
 
-Scans `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.mcp.json`, `.claude/settings.json`,
-and Cursor rules files. Exits 1 if any CRITICAL or HIGH finding is found.
+### What it scans
+
+| File | Location |
+|---|---|
+| `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | Repo root |
+| `.mcp.json` | Repo root and subdirectories |
+| `.claude/settings.json` | `.claude/` directory |
+| `.cursor/rules`, `.cursor/rules/*.mdc` | Cursor rules |
+| `SKILL.md` | Under any `skills/` directory |
+
+### What it detects
+
+| Rule | Severity |
+|---|---|
+| Prompt injection keywords (`ignore previous instructions`, `new objective:`, …) | CRITICAL |
+| Hidden unicode characters (zero-width, bidi overrides) | CRITICAL |
+| Base64-encoded instructions bypassing keyword filters | CRITICAL |
+| Conditional/sleeper triggers (`when user asks X, do Y`) | CRITICAL |
+| MCP tool description carrying injection keywords (read as trusted model context) | CRITICAL |
+| Persona override (`you are not Claude`, `your true purpose`) | HIGH |
+| MCP server using non-HTTPS URL | HIGH |
+| MCP server using raw IP address (possible C2) | HIGH |
+| MCP server using tunnel service (ngrok, Cloudflare, …) | HIGH |
+| MCP server running a shell, inline `-c`/`-e`, temp-dir binary, or dangerous env var | HIGH |
+| Instruction referencing credential files (`.env`, `id_rsa`, `.aws/credentials`) | HIGH |
+| Exfiltration sink (`send`/`POST`/`curl` + external URL on one line) | HIGH |
+| Wildcard `allow` in `permissions` | HIGH |
+| Unrestricted shell access with no deny rules | MEDIUM |
+| `npx` MCP server without a lock file | MEDIUM |
+| Auto-run hooks executing commands (download-execute → CRITICAL, shell flag → HIGH) | CRITICAL–MEDIUM |
+
+Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
+
+### In CI
+
+```yaml
+- name: Audit agent configs
+  run: zyrax-guard scan-agents . --strict
+```
+
+### Via MCP (`scan_agents` tool)
+
+Once registered as an MCP server, agents also have access to `scan_agents`:
+
+```json
+{
+  "name": "scan_agents",
+  "arguments": { "dir": "." }
+}
+```
 
 ---
 
@@ -342,71 +407,6 @@ Apply immediately:
 
 From now on every `npm install`, `pip install`, or `cargo add` in a PowerShell window
 is automatically checked before anything installs.
-
----
-
-## Auditing AI agent configs (`scan-agents`)
-
-AI coding agents (Claude Code, Cursor, Gemini CLI) read configuration files that can be
-weaponized: a malicious `CLAUDE.md` in a repo you clone, a tampered `.mcp.json` that
-points to an attacker's server, an MCP tool whose description hides instructions, a
-`settings.json` granting wildcard shell access, or prose that quietly steers the agent
-toward reading `.env` and POSTing it out. Guard detects these before the agent runs.
-
-```bash
-zyrax-guard scan-agents .
-```
-
-### What it scans
-
-| File | Location |
-|---|---|
-| `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | Repo root |
-| `.mcp.json` | Repo root and subdirectories |
-| `.claude/settings.json` | `.claude/` directory |
-| `.cursor/rules`, `.cursor/rules/*.mdc` | Cursor rules |
-| `SKILL.md` | Under any `skills/` directory |
-
-### What it detects
-
-| Rule | Severity |
-|---|---|
-| Prompt injection keywords (`ignore previous instructions`, `new objective:`, …) | CRITICAL |
-| Hidden unicode characters (zero-width, bidi overrides) | CRITICAL |
-| Base64-encoded instructions bypassing keyword filters | CRITICAL |
-| Conditional/sleeper triggers (`when user asks X, do Y`) | CRITICAL |
-| MCP tool description carrying injection keywords (read as trusted model context) | CRITICAL |
-| Persona override (`you are not Claude`, `your true purpose`) | HIGH |
-| MCP server using non-HTTPS URL | HIGH |
-| MCP server using raw IP address (possible C2) | HIGH |
-| MCP server using tunnel service (ngrok, Cloudflare, …) | HIGH |
-| MCP server running a shell, inline `-c`/`-e`, temp-dir binary, or dangerous env var | HIGH |
-| Instruction referencing credential files (`.env`, `id_rsa`, `.aws/credentials`) | HIGH |
-| Exfiltration sink (`send`/`POST`/`curl` + external URL on one line) | HIGH |
-| Wildcard `allow` in `permissions` | HIGH |
-| Unrestricted shell access with no deny rules | MEDIUM |
-| `npx` MCP server without a lock file | MEDIUM |
-| Auto-run hooks executing commands (download-execute → CRITICAL, shell flag → HIGH) | CRITICAL–MEDIUM |
-
-Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
-
-### In CI
-
-```yaml
-- name: Audit agent configs
-  run: zyrax-guard scan-agents . --strict
-```
-
-### Via MCP (`scan_agents` tool)
-
-Once registered as an MCP server, agents also have access to `scan_agents`:
-
-```json
-{
-  "name": "scan_agents",
-  "arguments": { "dir": "." }
-}
-```
 
 ---
 
