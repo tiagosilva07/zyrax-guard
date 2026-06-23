@@ -1,9 +1,13 @@
 name: "Zyrax Guard"
-description: "Catch malicious or risky dependencies in CI before they merge: typosquats, malware, hallucinated names."
+description: "Zyrax Guard CI gate: block typosquats, malware & hallucinated dependencies on every PR."
 author: "Zyrax"
 branding:
   icon: "shield"
   color: "blue"
+
+# NOTE: This Action currently gates dependencies only. Auditing agent configs
+# (scan-agents) in CI — SARIF + code-scanning + PR annotations — is the next slice
+# (roadmap v0.8). Until then the Marketplace listing must not claim config auditing.
 
 inputs:
   ecosystem:
