@@ -205,8 +205,10 @@ Once registered as an MCP server, agents also have access to `scan_agents`:
 
 ## GitHub Action
 
-Gate every pull request: Zyrax Guard checks dependencies added in the PR and fails the
-check if any is blocked. Add `.github/workflows/zyrax-guard.yml`:
+Gate every pull request. By default (`scan: both`) Zyrax Guard audits AI agent configs
+(prompt injection, malicious MCP servers, risky permissions) **and** gates dependencies
+added in the PR, failing the check if anything is blocked. Add
+`.github/workflows/zyrax-guard.yml`:
 
 ```yaml
 name: Zyrax Guard
@@ -227,10 +229,12 @@ On a pull request it scans only the dependencies added versus the base branch; o
 it scans the whole lockfile. The job fails when a dependency is blocked. `@v0` tracks the
 latest 0.x release; pin an exact version (e.g. `@v0.7.1`) for fully reproducible CI.
 
-**Inputs** (all optional): `ecosystem` (default `npm`), `lockfile` (default per-ecosystem),
-`base` (explicit base lockfile), `strict` (treat WARN as failure), `deep` (inspect install
-scripts), `version` (Guard release, default `latest`), `fail-on-block` (default `true`),
-`sarif-file` (write SARIF for Code Scanning), `args` (extra raw flags).
+**Inputs** (all optional): `scan` (`deps | agents | both`, default `both`), `ecosystem`
+(default `npm`), `lockfile` (default per-ecosystem), `base` (explicit base lockfile),
+`strict` (treat WARN as failure), `deep` (inspect install scripts), `version` (Guard
+release, default `latest`), `fail-on-block` (default `true`), `sarif-file` (write
+dependency SARIF for Code Scanning), `agents-sarif-file` (write agent-config SARIF for
+Code Scanning), `args` (extra raw flags).
 
 Upload results to **GitHub Code Scanning** so findings show up inline on the PR:
 
@@ -242,6 +246,25 @@ Upload results to **GitHub Code Scanning** so findings show up inline on the PR:
       - uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard.sarif
+```
+
+Audit agent configs **and** dependencies, both surfaced in Code Scanning:
+
+```yaml
+      - uses: tiagosilva07/zyrax-guard@v0
+        with:
+          scan: both
+          sarif-file: zyrax-guard-deps.sarif
+          agents-sarif-file: zyrax-guard-agents.sarif
+          fail-on-block: "false"
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zyrax-guard-deps.sarif
+          category: zyrax-guard-deps
+      - uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: zyrax-guard-agents.sarif
+          category: zyrax-guard-agents
 ```
 
 (That job needs `permissions: { security-events: write }`.)
@@ -469,7 +492,7 @@ waitlist at **[zyrax.io](https://zyrax.io)**.
 | **v0.5.0** | Rebrand to Zyrax; public release | shipped |
 | **v0.6.x** | GitHub Action + Marketplace listing + `curl\|sh` installer; floating `@v0` tag | shipped |
 | **v0.7.0** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) + Phase 2 detections (credential access, exfiltration sinks, MCP tool-description injection) | shipped |
-| **v0.8 (next)** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | planned |
+| **v0.8** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | shipped |
 | **exploring** | Community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
