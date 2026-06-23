@@ -412,10 +412,10 @@ is automatically checked before anything installs.
 
 ## Using with AI coding agents
 
-AI agents sometimes hallucinate package names. Attackers pre-register those names as
-malware. Guard breaks that attack chain by checking every package before the agent runs
-an install. Register `zyrax-guard mcp` as an MCP server and your agent gains a
-`check_package` tool it calls before every install.
+Register `zyrax-guard mcp` as an MCP server and your agent gains a `scan_agents` tool to
+audit the configs it's about to act on — and a `check_package` tool it calls before every
+install (AI agents hallucinate package names; attackers pre-register them as malware,
+and Guard breaks that chain).
 
 → **[MCP setup for Claude Code, Cursor, Windsurf, VS Code, and Continue.dev](docs/mcp-integrations.md)**
 
@@ -448,8 +448,9 @@ chain yourself.
 
 ## Free & open source
 
-Zyrax Guard is **MIT-licensed and free** — every check, the PR gate, the MCP server, the
-shell hook, and the JSON/SARIF output. Read the code and verify the binary yourself.
+Zyrax Guard is **MIT-licensed and free** — the agent-config auditor (`scan-agents` +
+the `scan_agents` MCP tool), every package check, the PR gate, the `check_package` MCP
+tool, the shell hook, and the JSON/SARIF output. Read the code and verify the binary yourself.
 
 A **Zyrax platform** for teams (organization-wide policy, continuous monitoring, dashboards,
 and audit/compliance reporting) is in development. Learn more and join the early-access
