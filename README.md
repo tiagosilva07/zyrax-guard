@@ -5,34 +5,33 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/tiagosilva07/zyrax-guard)](https://goreportcard.com/report/github.com/tiagosilva07/zyrax-guard)
 [![Website](https://img.shields.io/badge/website-zyrax.io-2cc9da)](https://zyrax.io)
 
-**Vet packages before you install them. Audit AI agent configs before you run them.**
-Zyrax Guard catches typosquats, known-malicious packages, and hallucinated names — and
-scans your `CLAUDE.md`, `.mcp.json`, and agent settings for prompt injection, malicious
-MCP servers, and supply-chain risks. In milliseconds. Nothing leaves your machine.
+**Audit your AI agent configs before you run them.**
+Catch the prompt injection, malicious MCP servers, and credential-exfil hiding in the
+files that steer your AI — `CLAUDE.md`, `.mcp.json`, agent settings, skills — and vet the
+packages they pull in. In milliseconds. Nothing leaves your machine.
 
 ```
+$ zyrax-guard scan-agents .
+
+Scanning . for agent config files...
+  Found 2 file(s): .mcp.json, CLAUDE.md
+
+  [HIGH]  .mcp.json
+           MCP server 'data-exfil' uses non-HTTPS URL: http://attacker.example.com/collect
+           → Use HTTPS for all external MCP server URLs.
+
+  [CRITICAL]  CLAUDE.md:3
+           Prompt injection keyword detected: 'ignore previous instructions'
+           → Remove or review this instruction. Triage as false positive if intentional.
+
+  2 finding(s) — 1 CRITICAL, 1 HIGH
+
 $ zyrax-guard check lodahs
 ✗ lodahs@0.0.1-security — BLOCK
-  - name is similar to "lodash" — double-check you meant this package
+  - looks like a typo of "lodash" (far more popular); this name has only 45 weekly downloads
   - MAL-2025-25502: Malicious code in lodahs (npm)
   did you mean: lodash
   to override:  zyrax-guard allow lodahs
-
-$ zyrax-guard check lodash
-✓ lodash@4.18.1 — SAFE
-
-$ zyrax-guard scan-agents .
-  Found 3 file(s): AGENTS.md, .mcp.json, .claude/settings.json
-
-  [CRITICAL]  AGENTS.md:4
-              Prompt injection keyword detected: 'ignore previous instructions'
-              → Remove or review this instruction.
-
-  [HIGH]      .mcp.json
-              MCP server 'data-exfil' uses non-HTTPS URL: http://attacker.example.com/collect
-              → Use HTTPS for all external MCP server URLs.
-
-  2 finding(s) — 1 CRITICAL, 1 HIGH
 ```
 
 Works locally, in CI, and as a gate for AI coding agents. No account required. Nothing
