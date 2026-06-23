@@ -32,7 +32,7 @@ usage:
   zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep]
   zyrax-guard allow <name>
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
-  zyrax-guard scan-agents [dir] [--json] [--strict]         (audit CLAUDE.md, .mcp.json, settings.json, …)
+  zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
   zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
   zyrax-guard --version
@@ -371,8 +371,9 @@ func loadPopular() []string { return data.PopularNPM() }
 func cmdScanAgents(args []string) int {
 	fs := flag.NewFlagSet("scan-agents", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "JSON output")
+	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "exit 1 for any finding (default: exit 1 for CRITICAL/HIGH only)")
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(reorderFlagsFirst(args)); err != nil {
 		return 2
 	}
 	dir := "."
@@ -384,6 +385,14 @@ func cmdScanAgents(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "scan-agents:", err)
 		return 2
+	}
+
+	if *asSARIF {
+		if err := agentsec.SARIF(os.Stdout, findings); err != nil {
+			fmt.Fprintln(os.Stderr, "scan-agents:", err)
+			return 2
+		}
+		return agentScanExit(findings, *strict)
 	}
 
 	if *asJSON {
