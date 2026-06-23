@@ -1,13 +1,9 @@
 name: "Zyrax Guard"
-description: "Zyrax Guard CI gate: block typosquats, malware & hallucinated dependencies on every PR."
+description: "Zyrax Guard CI: audit AI agent configs (prompt injection, rogue MCP servers) + gate risky dependencies on every PR."
 author: "Zyrax"
 branding:
   icon: "shield"
   color: "blue"
-
-# NOTE: This Action currently gates dependencies only. Auditing agent configs
-# (scan-agents) in CI — SARIF + code-scanning + PR annotations — is the next slice
-# (roadmap v0.8). Until then the Marketplace listing must not claim config auditing.
 
 inputs:
   ecosystem:
@@ -37,6 +33,12 @@ inputs:
   args:
     description: "Extra raw arguments appended to the scan command."
     default: ""
+  scan:
+    description: "What to scan: deps (dependency PR-gate), agents (audit AI agent configs), or both."
+    default: "both"
+  agents-sarif-file:
+    description: "If set, write the agent-config SARIF here (upload to GitHub Code Scanning under its own category)."
+    default: ""
 
 runs:
   using: "composite"
@@ -61,10 +63,15 @@ runs:
         ZG_SARIF: ${{ inputs.sarif-file }}
         ZG_ARGS: ${{ inputs.args }}
         ZG_FAIL: ${{ inputs.fail-on-block }}
+        ZG_SCAN: ${{ inputs.scan }}
         GH_EVENT: ${{ github.event_name }}
         GH_BASE_REF: ${{ github.base_ref }}
       run: |
         set -eu
+        if [ "$ZG_SCAN" = agents ]; then
+          echo "scan=agents — skipping dependency scan."
+          exit 0
+        fi
         LOCK="$ZG_LOCK"
         if [ -z "$LOCK" ]; then
           case "$ZG_ECO" in
@@ -109,6 +116,42 @@ runs:
 
         if [ "$code" -ne 0 ] && [ "$ZG_FAIL" != "true" ]; then
           echo "zyrax-guard reported issues (exit $code); fail-on-block=false, not failing the job."
+          exit 0
+        fi
+        exit $code
+
+    - name: Audit agent configs
+      shell: bash
+      env:
+        ZG_SCAN: ${{ inputs.scan }}
+        ZG_STRICT: ${{ inputs.strict }}
+        ZG_AGENTS_SARIF: ${{ inputs.agents-sarif-file }}
+        ZG_FAIL: ${{ inputs.fail-on-block }}
+      run: |
+        set -eu
+        if [ "$ZG_SCAN" = deps ]; then
+          echo "scan=deps — skipping agent-config audit."
+          exit 0
+        fi
+
+        # Flags BEFORE the path so they parse regardless of CLI version.
+        set -- scan-agents
+        [ "$ZG_STRICT" = "true" ] && set -- "$@" --strict
+        [ -n "$ZG_AGENTS_SARIF" ] && set -- "$@" --sarif
+        set -- "$@" .
+
+        echo "+ zyrax-guard $*"
+        set +e
+        if [ -n "$ZG_AGENTS_SARIF" ]; then
+          zyrax-guard "$@" > "$ZG_AGENTS_SARIF"
+        else
+          zyrax-guard "$@"
+        fi
+        code=$?
+        set -e
+
+        if [ "$code" -ne 0 ] && [ "$ZG_FAIL" != "true" ]; then
+          echo "zyrax-guard found agent-config issues (exit $code); fail-on-block=false, not failing the job."
           exit 0
         fi
         exit $code
