@@ -8,12 +8,19 @@ Register `zyrax-guard mcp` as an MCP server and your agent gains two tools:
 - **`check_package`** — vet a package before install (AI agents hallucinate package
   names; attackers pre-register them as malware — Guard breaks that chain).
 
+The server is published on the official MCP registry as `io.github.tiagosilva07/zyrax-guard`.
+
 ## Claude Code CLI
 
 Register Guard as a persistent MCP tool so Claude checks packages automatically:
 
 ```bash
 claude mcp add zyrax-guard -- zyrax-guard mcp
+```
+
+```bash
+# Using the npm package (no local install needed):
+claude mcp add zyrax-guard -- npx -y zyrax-guard mcp
 ```
 
 That's it. Claude Code now has `check_package` and `scan_agents` tools it calls before suggesting
