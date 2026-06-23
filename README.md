@@ -449,8 +449,8 @@ chain yourself.
 ## Free & open source
 
 Zyrax Guard is **MIT-licensed and free** — the agent-config auditor (`scan-agents` +
-the `scan_agents` MCP tool), every package check, the PR gate, the `check_package` MCP
-tool, the shell hook, and the JSON/SARIF output. Read the code and verify the binary yourself.
+the `scan_agents` MCP tool), every package check, the PR gate with JSON/SARIF output, the
+`check_package` MCP tool, and the shell hook. Read the code and verify the binary yourself.
 
 A **Zyrax platform** for teams (organization-wide policy, continuous monitoring, dashboards,
 and audit/compliance reporting) is in development. Learn more and join the early-access
