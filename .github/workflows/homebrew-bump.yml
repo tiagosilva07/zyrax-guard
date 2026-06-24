@@ -1,14 +1,25 @@
 name: Bump Homebrew formula
 
-# On each published release, regenerate Formula/zyrax-guard.rb from the release
-# checksums and push it to the tap repo (tiagosilva07/homebrew-zyrax).
+# Regenerate Formula/zyrax-guard.rb from the release checksums and push it to the tap repo
+# (tiagosilva07/homebrew-zyrax).
+#
+# Triggers:
+#   - workflow_run after the "Release" workflow completes (a release created by GITHUB_TOKEN
+#     does not start other workflows, so we chain off Release's completion).
+#   - workflow_dispatch to (re)bump a specific tag manually.
 #
 # GATED: needs a repo secret HOMEBREW_TAP_TOKEN — a token with contents:write on
 # tiagosilva07/homebrew-zyrax (a fine-grained PAT scoped to that repo is ideal).
 # Without it the job no-ops. GITHUB_TOKEN cannot push to another repo.
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to bump (e.g. v0.8.0)"
+        required: true
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,28 +27,37 @@ permissions:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Gate on HOMEBREW_TAP_TOKEN
+      - name: Resolve tag + gate on HOMEBREW_TAP_TOKEN
         id: gate
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
-          if [ -z "${TAP_TOKEN:-}" ]; then
-            echo "HOMEBREW_TAP_TOKEN not set — skipping Homebrew formula bump."
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then TAG="$INPUT_TAG"; else TAG="$RUN_TAG"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -n "${TAP_TOKEN:-}" ] && [ -n "$TAG" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "HOMEBREW_TAP_TOKEN missing or tag empty (tag='$TAG') — skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout
+      - name: Checkout (release tag)
         if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
+        with:
+          ref: ${{ steps.gate.outputs.tag }}
 
       - name: Download release checksums
         if: steps.gate.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.gate.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -46,7 +66,7 @@ jobs:
       - name: Generate formula
         if: steps.gate.outputs.enabled == 'true'
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.gate.outputs.tag }}
         run: |
           set -euo pipefail
           node scripts/gen-homebrew-formula.mjs "${TAG#v}" dist/checksums.txt zyrax-guard.rb
@@ -55,7 +75,7 @@ jobs:
         if: steps.gate.outputs.enabled == 'true'
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.gate.outputs.tag }}
         run: |
           set -euo pipefail
           git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/tiagosilva07/homebrew-zyrax.git" tap
