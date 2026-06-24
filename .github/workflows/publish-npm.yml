@@ -1,11 +1,11 @@
 name: Publish npm + MCP registry
 
-# Publishes the npm wrapper (zyrax-guard + @zyrax-guard/* platform packages) and the
-# MCP registry listing (server.json) when a GitHub Release is published.
+# Publishes the npm wrapper (zyrax-guard + unscoped zyrax-guard-<platform>-<arch> packages)
+# and the MCP registry listing (server.json) when a GitHub Release is published.
 #
 # REQUIREMENTS (publishing is intentionally gated — inert until these exist):
-#   - repo secret NPM_TOKEN: an npm automation token with publish rights to
-#     `zyrax-guard` and the `@zyrax-guard` scope (create an npm org "zyrax-guard").
+#   - repo secret NPM_TOKEN: an npm Automation token (personal account is fine — packages
+#     are unscoped, no npm org required) with publish rights.
 #   - MCP registry: GitHub OIDC (no secret needed; uses id-token below). The registry
 #     trusts io.github.tiagosilva07/* from this repo's OIDC identity.
 on:

@@ -6,12 +6,12 @@ const { resolveBinary } = require("../lib/resolve.js");
 
 test("linux x64 -> linux-x64 package, plain binary name", () => {
   const fakeResolve = (spec) => {
-    assert.strictEqual(spec, "@zyrax-guard/linux-x64/package.json");
-    return "/fake/node_modules/@zyrax-guard/linux-x64/package.json";
+    assert.strictEqual(spec, "zyrax-guard-linux-x64/package.json");
+    return "/fake/node_modules/zyrax-guard-linux-x64/package.json";
   };
   assert.strictEqual(
     resolveBinary("linux", "x64", fakeResolve),
-    path.join("/fake/node_modules/@zyrax-guard/linux-x64", "zyrax-guard")
+    path.join("/fake/node_modules/zyrax-guard-linux-x64", "zyrax-guard")
   );
 });
 
