@@ -1,0 +1,73 @@
+name: Bump Homebrew formula
+
+# On each published release, regenerate Formula/zyrax-guard.rb from the release
+# checksums and push it to the tap repo (tiagosilva07/homebrew-zyrax).
+#
+# GATED: needs a repo secret HOMEBREW_TAP_TOKEN — a token with contents:write on
+# tiagosilva07/homebrew-zyrax (a fine-grained PAT scoped to that repo is ideal).
+# Without it the job no-ops. GITHUB_TOKEN cannot push to another repo.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate on HOMEBREW_TAP_TOKEN
+        id: gate
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set — skipping Homebrew formula bump."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
+
+      - name: Download release checksums
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern 'checksums.txt'
+
+      - name: Generate formula
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          node scripts/gen-homebrew-formula.mjs "${TAG#v}" dist/checksums.txt zyrax-guard.rb
+
+      - name: Push formula to tap
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/tiagosilva07/homebrew-zyrax.git" tap
+          mkdir -p tap/Formula
+          cp zyrax-guard.rb tap/Formula/zyrax-guard.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/zyrax-guard.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date for ${TAG#v}."
+          else
+            git commit -m "zyrax-guard ${TAG#v}"
+            git push
+          fi
