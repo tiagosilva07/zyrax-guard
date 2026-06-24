@@ -35,6 +35,21 @@ jobs:
 It checks only **newly added or changed** dependencies (fast, no re-flagging the whole
 tree), fails the PR on any BLOCK, and uploads results to GitHub Code Scanning.
 
+## Audit agent configs
+
+Audit the repo's AI agent configs (`CLAUDE.md`, `.mcp.json`, agent settings, skills) for
+prompt injection, malicious MCP servers, and risky permissions:
+
+```yaml
+- name: Audit agent configs
+  run: zyrax-guard scan-agents --strict .
+```
+
+Add `--sarif` to emit SARIF 2.1.0 and upload it via `github/codeql-action/upload-sarif@v3`
+so findings surface inline on the PR. The [GitHub Action](../README.md#github-action)
+(`scan: both` + `agents-sarif-file`) wires both the dependency and agent-config scans up
+for you.
+
 ## PyPI in CI
 
 ```bash
