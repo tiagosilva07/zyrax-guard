@@ -89,10 +89,21 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          for d in npm/platforms/*/; do
-            npm publish "$d" --access public --provenance
-          done
-          npm publish npm/zyrax-guard --access public --provenance
+          # Idempotent: skip versions already on npm (so re-runs after a partial
+          # publish only push what's missing). Use ./<dir> so npm treats the arg as a
+          # local path, never a GitHub shorthand (e.g. "npm/zyrax-guard" -> owner/repo).
+          publish_dir() {
+            d="$1"
+            name=$(node -p "require('./${d}package.json').name")
+            ver=$(node -p "require('./${d}package.json').version")
+            if npm view "${name}@${ver}" version >/dev/null 2>&1; then
+              echo "skip ${name}@${ver} — already published"
+            else
+              npm publish "./${d}" --access public --provenance
+            fi
+          }
+          for d in npm/platforms/*/; do publish_dir "$d"; done
+          publish_dir "npm/zyrax-guard/"
 
       - name: Install mcp-publisher (pinned + checksum-verified)
         if: steps.gate.outputs.enabled == 'true'
