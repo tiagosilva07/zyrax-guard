@@ -1,7 +1,13 @@
 name: Publish npm + MCP registry
 
 # Publishes the npm wrapper (zyrax-guard + unscoped zyrax-guard-<platform>-<arch> packages)
-# and the MCP registry listing (server.json) when a GitHub Release is published.
+# and the MCP registry listing (server.json) for a release tag.
+#
+# Triggers:
+#   - workflow_run after the "Release" workflow completes. A GitHub Release created by a
+#     workflow using GITHUB_TOKEN does NOT emit a release:published event that can start
+#     other workflows, so we chain off the Release workflow's completion instead.
+#   - workflow_dispatch to (re)publish a specific tag manually.
 #
 # REQUIREMENTS (publishing is intentionally gated — inert until these exist):
 #   - repo secret NPM_TOKEN: an npm Automation token (personal account is fine — packages
@@ -9,8 +15,14 @@ name: Publish npm + MCP registry
 #   - MCP registry: GitHub OIDC (no secret needed; uses id-token below). The registry
 #     trusts io.github.tiagosilva07/* from this repo's OIDC identity.
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v0.8.0)"
+        required: true
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -19,22 +31,32 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # On workflow_run, only proceed when the Release workflow succeeded.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     steps:
-      - name: Gate on NPM_TOKEN
+      - name: Resolve tag + gate on NPM_TOKEN
         id: gate
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
         run: |
-          if [ -z "${NPM_TOKEN:-}" ]; then
-            echo "NPM_TOKEN secret not set — skipping publish. Add it to enable npm + MCP registry publishing."
-            echo "enabled=false" >> "$GITHUB_OUTPUT"
-          else
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then TAG="$INPUT_TAG"; else TAG="$RUN_TAG"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -n "${NPM_TOKEN:-}" ] && [ -n "$TAG" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "NPM_TOKEN missing or tag empty (tag='$TAG') — skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Checkout
+      - name: Checkout (release tag)
         if: steps.gate.outputs.enabled == 'true'
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
+        with:
+          ref: ${{ steps.gate.outputs.tag }}
 
       - name: Set up Node.js
         if: steps.gate.outputs.enabled == 'true'
@@ -47,7 +69,7 @@ jobs:
         if: steps.gate.outputs.enabled == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.gate.outputs.tag }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -56,7 +78,7 @@ jobs:
       - name: Stage npm packages
         if: steps.gate.outputs.enabled == 'true'
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ steps.gate.outputs.tag }}
         run: |
           set -euo pipefail
           node scripts/build-npm.mjs "${TAG#v}" dist
@@ -91,7 +113,7 @@ jobs:
       - name: Stamp server.json version
         if: steps.gate.outputs.enabled == 'true'
         env:
-          V: ${{ github.event.release.tag_name }}
+          V: ${{ steps.gate.outputs.tag }}
         run: |
           set -euo pipefail
           node -e "const fs=require('fs');const v=process.env.V.replace(/^v/,'');const s=JSON.parse(fs.readFileSync('server.json','utf8'));s.version=v;s.packages[0].version=v;fs.writeFileSync('server.json',JSON.stringify(s,null,2)+'\n')"
