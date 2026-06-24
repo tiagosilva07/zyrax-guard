@@ -1,5 +1,5 @@
 {
-  "name": "zyrax-guard-linux-x64",
+  "name": "@tiagosilva07/zyrax-guard-linux-x64",
   "version": "0.0.0",
   "description": "zyrax-guard prebuilt binary for linux-x64.",
   "license": "MIT",
