@@ -1,14 +1,16 @@
 # Publishing: npm + MCP registry
 
-Guard's CLI/MCP server is distributed on npm (`zyrax-guard` + `@zyrax-guard/*` platform
-packages) and listed on the official MCP registry as `io.github.tiagosilva07/zyrax-guard`.
-Publishing runs from `.github/workflows/publish-npm.yml` when a GitHub Release is published —
-but only once the prerequisites below exist (the workflow no-ops otherwise).
+Guard's CLI/MCP server is distributed on npm (the `zyrax-guard` package plus six unscoped
+`zyrax-guard-<platform>-<arch>` binary packages) and listed on the official MCP registry as
+`io.github.tiagosilva07/zyrax-guard`. Publishing runs from `.github/workflows/publish-npm.yml`
+when a GitHub Release is published — but only once the prerequisites below exist (the workflow
+no-ops otherwise).
 
 ## One-time setup
-1. **npm org + token.** Create an npm org named `zyrax-guard` (gives the `@zyrax-guard`
-   scope used by the platform packages). Create an **automation** token with publish rights
-   to `zyrax-guard` and `@zyrax-guard/*`, and add it as the repo secret **`NPM_TOKEN`**.
+1. **npm token.** A personal npm account is enough — the platform packages are unscoped, so
+   **no npm org is required**. Create an **Automation** token (bypasses 2FA for CI) with
+   publish rights, and add it as the repo secret **`NPM_TOKEN`**. The first publish claims
+   `zyrax-guard` and the six `zyrax-guard-*` names.
 2. **MCP registry.** No secret needed — the workflow authenticates with GitHub OIDC
    (`id-token: write`). The registry trusts the `io.github.tiagosilva07/*` namespace from this
    repo's OIDC identity. (First-time only, you may run `mcp-publisher login github` locally once
@@ -60,6 +62,6 @@ pinned to a release with per-platform SHA-256 from `checksums.txt`.
   ```
 
 ## Version sync
-The npm package version, all `@zyrax-guard/*` versions, and both `server.json` versions must
+The npm package version, all `zyrax-guard-*` platform-package versions, and both `server.json` versions must
 equal the release version. `build-npm.mjs` and the workflow handle this automatically; for a
 manual publish, keep them in sync.
