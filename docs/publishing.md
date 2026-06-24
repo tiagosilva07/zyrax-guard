@@ -1,16 +1,17 @@
 # Publishing: npm + MCP registry
 
-Guard's CLI/MCP server is distributed on npm (the `zyrax-guard` package plus six unscoped
-`zyrax-guard-<platform>-<arch>` binary packages) and listed on the official MCP registry as
-`io.github.tiagosilva07/zyrax-guard`. Publishing runs from `.github/workflows/publish-npm.yml`
-when a GitHub Release is published — but only once the prerequisites below exist (the workflow
-no-ops otherwise).
+Guard's CLI/MCP server is distributed on npm (the `zyrax-guard` package plus six
+`@tiagosilva07/zyrax-guard-<platform>-<arch>` binary packages) and listed on the official MCP
+registry as `io.github.tiagosilva07/zyrax-guard`. Publishing runs from
+`.github/workflows/publish-npm.yml` after the Release workflow completes (or via
+workflow_dispatch) — but only once the prerequisites below exist (the workflow no-ops otherwise).
 
 ## One-time setup
-1. **npm token.** A personal npm account is enough — the platform packages are unscoped, so
-   **no npm org is required**. Create an **Automation** token (bypasses 2FA for CI) with
-   publish rights, and add it as the repo secret **`NPM_TOKEN`**. The first publish claims
-   `zyrax-guard` and the six `zyrax-guard-*` names.
+1. **npm token.** A personal npm account is enough — the platform packages use the **personal
+   scope `@tiagosilva07`** (every npm user has a scope matching their username), so **no npm org
+   is required**. Scoped names also avoid npm's bulk-unscoped-name spam filter. Create an
+   **Automation** token (bypasses 2FA for CI) with publish rights and add it as the repo secret
+   **`NPM_TOKEN`**.
 2. **MCP registry.** No secret needed — the workflow authenticates with GitHub OIDC
    (`id-token: write`). The registry trusts the `io.github.tiagosilva07/*` namespace from this
    repo's OIDC identity. (First-time only, you may run `mcp-publisher login github` locally once
