@@ -498,8 +498,7 @@ the `scan_agents` MCP tool), every package check, the PR gate with JSON/SARIF ou
 `check_package` MCP tool, and the shell hook. Read the code and verify the binary yourself.
 
 A **Zyrax platform** for teams (organization-wide policy, continuous monitoring, dashboards,
-and audit/compliance reporting) is in development. Learn more and join the early-access
-waitlist at **[zyrax.io](https://zyrax.io)**.
+and audit/compliance reporting) is in development — learn more at **[zyrax.io](https://zyrax.io)**.
 
 ---
 
