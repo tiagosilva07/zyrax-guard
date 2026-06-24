@@ -1,0 +1,21 @@
+{
+  "name": "zyrax-guard",
+  "version": "0.0.0",
+  "description": "Audit AI agent configs (prompt injection, rogue MCP servers) and vet packages — local, zero-dependency. CLI + MCP server.",
+  "keywords": ["mcp", "ai-security", "prompt-injection", "supply-chain", "claude", "cursor", "typosquat"],
+  "bin": { "zyrax-guard": "bin/zyrax-guard.js" },
+  "mcpName": "io.github.tiagosilva07/zyrax-guard",
+  "files": ["bin", "lib", "README.md"],
+  "license": "MIT",
+  "homepage": "https://github.com/tiagosilva07/zyrax-guard#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/tiagosilva07/zyrax-guard.git" },
+  "engines": { "node": ">=18" },
+  "optionalDependencies": {
+    "@zyrax-guard/linux-x64": "0.0.0",
+    "@zyrax-guard/linux-arm64": "0.0.0",
+    "@zyrax-guard/darwin-x64": "0.0.0",
+    "@zyrax-guard/darwin-arm64": "0.0.0",
+    "@zyrax-guard/win32-x64": "0.0.0",
+    "@zyrax-guard/win32-arm64": "0.0.0"
+  }
+}

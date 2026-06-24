@@ -43,6 +43,16 @@ phones home except the public package name you are querying.
 
 ## Install
 
+### npm / npx
+
+```bash
+npx zyrax-guard@latest scan-agents .     # audit agent configs
+npx zyrax-guard@latest check lodash      # vet a package
+```
+
+Ships the prebuilt Go binary per-platform (via `optionalDependencies`) — no runtime
+download. Works anywhere Node 18+ is available.
+
 ### Quick install (Linux / macOS)
 
 ```bash
@@ -441,6 +451,9 @@ install (AI agents hallucinate package names; attackers pre-register them as mal
 and Guard breaks that chain).
 
 → **[MCP setup for Claude Code, Cursor, Windsurf, VS Code, and Continue.dev](docs/mcp-integrations.md)**
+
+Guard is on the official MCP registry as `io.github.tiagosilva07/zyrax-guard` — register it
+in one line with `npx -y zyrax-guard mcp`.
 
 ---
 
