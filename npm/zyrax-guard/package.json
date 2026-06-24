@@ -11,11 +11,11 @@
   "repository": { "type": "git", "url": "git+https://github.com/tiagosilva07/zyrax-guard.git" },
   "engines": { "node": ">=18" },
   "optionalDependencies": {
-    "zyrax-guard-linux-x64": "0.0.0",
-    "zyrax-guard-linux-arm64": "0.0.0",
-    "zyrax-guard-darwin-x64": "0.0.0",
-    "zyrax-guard-darwin-arm64": "0.0.0",
-    "zyrax-guard-win32-x64": "0.0.0",
-    "zyrax-guard-win32-arm64": "0.0.0"
+    "@tiagosilva07/zyrax-guard-linux-x64": "0.0.0",
+    "@tiagosilva07/zyrax-guard-linux-arm64": "0.0.0",
+    "@tiagosilva07/zyrax-guard-darwin-x64": "0.0.0",
+    "@tiagosilva07/zyrax-guard-darwin-arm64": "0.0.0",
+    "@tiagosilva07/zyrax-guard-win32-x64": "0.0.0",
+    "@tiagosilva07/zyrax-guard-win32-arm64": "0.0.0"
   }
 }

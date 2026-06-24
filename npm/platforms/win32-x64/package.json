@@ -1,5 +1,5 @@
 {
-  "name": "zyrax-guard-win32-x64",
+  "name": "@tiagosilva07/zyrax-guard-win32-x64",
   "version": "0.0.0",
   "description": "zyrax-guard prebuilt binary for win32-x64.",
   "license": "MIT",
