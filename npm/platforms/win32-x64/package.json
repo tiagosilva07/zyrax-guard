@@ -1,0 +1,10 @@
+{
+  "name": "zyrax-guard-win32-x64",
+  "version": "0.0.0",
+  "description": "zyrax-guard prebuilt binary for win32-x64.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/tiagosilva07/zyrax-guard.git" },
+  "os": ["win32"],
+  "cpu": ["x64"],
+  "files": ["zyrax-guard.exe"]
+}

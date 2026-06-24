@@ -10,3 +10,12 @@ package.json
 
 # internal planning docs — not published
 docs/superpowers/
+
+# npm wrapper build artifacts (binaries copied in at publish time)
+npm/platforms/*/zyrax-guard
+npm/platforms/*/zyrax-guard.exe
+npm/zyrax-guard/node_modules/
+
+# npm wrapper manifests ARE tracked (override the broad package.json ignore above)
+!npm/zyrax-guard/package.json
+!npm/platforms/*/package.json

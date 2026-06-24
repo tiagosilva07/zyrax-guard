@@ -1,11 +1,14 @@
 # Using Zyrax Guard with AI coding agents
 
-AI agents sometimes hallucinate package names. Attackers pre-register those names as
-malware. Guard breaks that attack chain by checking every package before the agent ever
-runs an install.
+Register `zyrax-guard mcp` as an MCP server and your agent gains two tools:
 
-Register `zyrax-guard mcp` as an MCP server in your agent of choice and it gains a
-`check_package` tool (and `scan_agents`) it can call before suggesting an install.
+- **`scan_agents`** — audit the agent config files in a repo (`CLAUDE.md`, `.mcp.json`,
+  settings, skills) for prompt injection, malicious MCP servers, credential-exfil, and
+  risky permissions *before the agent acts on them*.
+- **`check_package`** — vet a package before install (AI agents hallucinate package
+  names; attackers pre-register them as malware — Guard breaks that chain).
+
+The server is published on the official MCP registry as `io.github.tiagosilva07/zyrax-guard`.
 
 ## Claude Code CLI
 
@@ -15,7 +18,12 @@ Register Guard as a persistent MCP tool so Claude checks packages automatically:
 claude mcp add zyrax-guard -- zyrax-guard mcp
 ```
 
-That's it. Claude Code now has a `check_package` tool it calls before suggesting
+```bash
+# Using the npm package (no local install needed):
+claude mcp add zyrax-guard -- npx -y zyrax-guard mcp
+```
+
+That's it. Claude Code now has `check_package` and `scan_agents` tools it calls before suggesting
 `npm install` / `pip install` / `cargo add`. Guard's `check_package` tool accepts a
 `deep` boolean to enable the deep install-script check:
 
@@ -46,7 +54,7 @@ Add to `.cursor/mcp.json` in your project root (or the global `~/.cursor/mcp.jso
 }
 ```
 
-Restart Cursor. The agent now has access to `check_package` before installing anything.
+Restart Cursor. The agent now has access to `check_package` and `scan_agents`.
 
 ## Windsurf
 
@@ -110,6 +118,15 @@ Add to `~/.continue/config.json`:
 ```
 
 ## How the MCP tool works
+
+Once registered, the agent has access to `scan_agents`:
+
+```json
+{
+  "name": "scan_agents",
+  "arguments": { "dir": "." }
+}
+```
 
 Once registered, the agent has access to `check_package`:
 
