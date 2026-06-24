@@ -53,6 +53,15 @@ npx zyrax-guard@latest check lodash      # vet a package
 Ships the prebuilt Go binary per-platform (via `optionalDependencies`) — no runtime
 download. Works anywhere Node 18+ is available.
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install tiagosilva07/zyrax/zyrax-guard
+```
+
+Installs the signed release binary (SHA-256 verified by Homebrew). Updates land via
+`brew upgrade` once a new release is published.
+
 ### Quick install (Linux / macOS)
 
 ```bash

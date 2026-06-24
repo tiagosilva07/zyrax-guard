@@ -41,6 +41,24 @@ node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('server.json'
 ./mcp-publisher publish
 ```
 
+## Homebrew tap
+The CLI is also distributed through a Homebrew tap, `tiagosilva07/homebrew-zyrax`
+(`brew install tiagosilva07/zyrax/zyrax-guard`). The formula is a prebuilt-binary formula
+pinned to a release with per-platform SHA-256 from `checksums.txt`.
+
+- **One-time:** create a token with `contents:write` on `tiagosilva07/homebrew-zyrax` (a
+  fine-grained PAT scoped to that repo) and add it as the repo secret **`HOMEBREW_TAP_TOKEN`**.
+- **Per release (automated):** `.github/workflows/homebrew-bump.yml` regenerates the formula
+  from the release checksums and pushes it to the tap. No-ops until the secret exists.
+- **Manual bump:**
+  ```bash
+  VERSION=0.7.2
+  mkdir -p dist
+  gh release download "v$VERSION" --repo tiagosilva07/zyrax-guard --dir dist --pattern 'checksums.txt'
+  node scripts/gen-homebrew-formula.mjs "$VERSION" dist/checksums.txt Formula/zyrax-guard.rb
+  # commit Formula/zyrax-guard.rb to the tiagosilva07/homebrew-zyrax repo
+  ```
+
 ## Version sync
 The npm package version, all `@zyrax-guard/*` versions, and both `server.json` versions must
 equal the release version. `build-npm.mjs` and the workflow handle this automatically; for a
