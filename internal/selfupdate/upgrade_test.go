@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -121,5 +122,32 @@ func TestUpgradeBinaryVerifiesBeforeReplace(t *testing.T) {
 	b, _ := os.ReadFile(target)
 	if string(b) != "OLD" {
 		t.Fatalf("binary must be untouched on verification failure, got %q", b)
+	}
+}
+
+// TestDefaultCosignVerifyRequireSignature verifies the --require-signature contract for
+// the absent-cosign branch. This test is deterministic regardless of whether cosign is
+// installed on the machine: when cosign is present it is skipped (the test covers only
+// the absence path); when cosign is absent both branches are exercised.
+func TestDefaultCosignVerifyRequireSignature(t *testing.T) {
+	if _, err := exec.LookPath("cosign"); err == nil {
+		t.Skip("cosign is installed; this test covers the absent+required branch only")
+	}
+	asset := assetName(runtime.GOOS, runtime.GOARCH)
+	ctx := context.Background()
+
+	// requireSig=true must error when cosign is absent.
+	got := defaultCosignVerify(io.Discard, true)(ctx, "0.9.0", asset, []byte("x"))
+	if got == nil {
+		t.Fatal("require-signature must return an error when cosign is absent")
+	}
+	if !strings.Contains(got.Error(), "cosign") {
+		t.Errorf("error message should mention cosign, got: %v", got)
+	}
+
+	// requireSig=false must NOT error on cosign absence (best-effort).
+	got2 := defaultCosignVerify(io.Discard, false)(ctx, "0.9.0", asset, []byte("x"))
+	if got2 != nil {
+		t.Fatalf("best-effort must not error when cosign absent, got: %v", got2)
 	}
 }

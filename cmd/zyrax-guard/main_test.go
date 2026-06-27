@@ -199,6 +199,14 @@ func TestExitForVerdictErrorAlwaysFails(t *testing.T) {
 	}
 }
 
+func TestUpgradeRequireSignatureFlagParsed(t *testing.T) {
+	// `upgrade --require-signature --method bogus` must be rejected with exit 2
+	// (flag is parsed correctly; bogus method triggers validation before any network I/O).
+	if code := run([]string{"upgrade", "--require-signature", "--method", "bogus"}); code != 2 {
+		t.Errorf("upgrade --require-signature --method bogus exit=%d want 2", code)
+	}
+}
+
 func TestAllowAcceptsEcosystemFlag(t *testing.T) {
 	dir := t.TempDir()
 	cwd, _ := os.Getwd()
