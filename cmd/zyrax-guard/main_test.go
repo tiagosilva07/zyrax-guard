@@ -198,3 +198,18 @@ func TestExitForVerdictErrorAlwaysFails(t *testing.T) {
 		t.Error("ERROR must exit 1 with --strict")
 	}
 }
+
+func TestAllowAcceptsEcosystemFlag(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	os.Chdir(dir)
+	// A valid pypi name under --ecosystem pypi should be accepted (exit 0).
+	if code := run([]string{"allow", "--ecosystem", "pypi", "requests"}); code != 0 {
+		t.Fatalf("allow --ecosystem pypi exit=%d want 0", code)
+	}
+	// An invalid ecosystem is rejected.
+	if code := run([]string{"allow", "--ecosystem", "bogus", "x"}); code != 2 {
+		t.Fatalf("allow --ecosystem bogus exit=%d want 2", code)
+	}
+}
