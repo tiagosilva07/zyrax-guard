@@ -1,0 +1,17 @@
+title = "zyrax-guard gitleaks config"
+
+# Extend the default ruleset so we keep all upstream detectors.
+[extend]
+useDefault = true
+
+# zyrax-guard is a security tool whose test suites intentionally contain
+# strings that look like credentials, injection payloads, and malicious
+# package patterns. Exclude test files from the secret scan so gitleaks
+# doesn't flag deliberate fixtures as leaks.
+[allowlist]
+description = "Deliberate security test fixtures (this is a security-scanning tool)"
+paths = [
+  '''.*_test\.go$''',
+  '''internal/agentsec/.*''',
+  '''internal/check/testdata/.*''',
+]
