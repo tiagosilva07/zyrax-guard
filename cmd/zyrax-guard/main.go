@@ -39,7 +39,7 @@ usage:
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
   zyrax-guard mcp install [--global] [--command binary|npx]  (register Guard with your agent)
   zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
-  zyrax-guard upgrade                                       (update Guard to the latest release)
+  zyrax-guard upgrade [--require-signature]                 (update Guard to the latest release)
   zyrax-guard version [--check]
   zyrax-guard --version
 `
@@ -130,6 +130,7 @@ func maybeNotify(cmd string, args []string) {
 func cmdUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	method := fs.String("method", "", "override install-method detection: npm|brew|go|binary")
+	requireSig := fs.Bool("require-signature", false, "abort upgrade if cosign is not installed")
 	if err := fs.Parse(reorderFlagsFirst(args, "method")); err != nil {
 		return 2
 	}
@@ -160,9 +161,10 @@ func cmdUpgrade(args []string) int {
 		m = selfupdate.DetectInstall(exe, gobin)
 	}
 	err = selfupdate.Upgrade(os.Stdout, selfupdate.UpgradeOptions{
-		Current:  version,
-		Method:   m,
-		ExecPath: exe,
+		Current:          version,
+		Method:           m,
+		ExecPath:         exe,
+		RequireSignature: *requireSig,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "upgrade:", err)

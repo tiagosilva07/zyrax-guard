@@ -84,6 +84,10 @@ type UpgradeOptions struct {
 	// runs `cosign verify-blob` against the asset's .cosign.bundle when cosign is on PATH
 	// and is a no-op (best-effort) when it is not. A non-nil error aborts the upgrade.
 	CosignVerify func(ctx context.Context, version, asset string, assetBytes []byte) error
+	// RequireSignature, when true, causes the upgrade to abort with an error if cosign
+	// is not installed. The default (false) is best-effort: skip signature verification
+	// when cosign is absent and proceed with checksum-only verification.
+	RequireSignature bool
 }
 
 func assetName(goos, goarch string) string {
@@ -155,7 +159,7 @@ func upgradeBinary(ctx context.Context, w io.Writer, opts UpgradeOptions, latest
 	}
 	verify := opts.CosignVerify
 	if verify == nil {
-		verify = defaultCosignVerify(w)
+		verify = defaultCosignVerify(w, opts.RequireSignature)
 	}
 	if err := verify(ctx, latest, asset, data); err != nil {
 		return fmt.Errorf("cosign verification failed (binary NOT replaced): %w", err)
@@ -197,11 +201,16 @@ const cosignIdentityRegexp = `^https://github\.com/tiagosilva07/zyrax-guard/\.gi
 const cosignIssuer = "https://token.actions.githubusercontent.com"
 
 // defaultCosignVerify verifies asset's keyless cosign signature against its published
-// .cosign.bundle. If cosign is not installed it logs and returns nil (best-effort, as
-// documented). If cosign is present and verification fails, it returns the error.
-func defaultCosignVerify(w io.Writer) func(context.Context, string, string, []byte) error {
+// .cosign.bundle. If cosign is not installed and requireSig is true, it returns an error
+// (the upgrade is aborted). If cosign is not installed and requireSig is false, it logs
+// and returns nil (best-effort, checksum-only). If cosign is present and verification
+// fails, it returns the error.
+func defaultCosignVerify(w io.Writer, requireSig bool) func(context.Context, string, string, []byte) error {
 	return func(ctx context.Context, version, asset string, assetBytes []byte) error {
 		if _, err := exec.LookPath("cosign"); err != nil {
+			if requireSig {
+				return fmt.Errorf("cosign signature required but cosign is not installed")
+			}
 			fmt.Fprintln(w, "cosign not found on PATH — skipping signature verification (checksum-only).")
 			return nil
 		}
