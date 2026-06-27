@@ -16,7 +16,6 @@ import (
 
 	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
 	"github.com/tiagosilva07/zyrax-guard/internal/check"
-	"github.com/tiagosilva07/zyrax-guard/internal/data"
 	"github.com/tiagosilva07/zyrax-guard/internal/hook"
 	"github.com/tiagosilva07/zyrax-guard/internal/mcp"
 	"github.com/tiagosilva07/zyrax-guard/internal/mcpinstall"
@@ -524,8 +523,6 @@ func cmdInit(args []string) int {
 	fmt.Println(snippet)
 	return 0
 }
-
-func loadPopular() []string { return data.PopularNPM() }
 
 // cmdScanAgents audits AI agent configuration files in a directory for prompt
 // injection, malicious MCP hosts, excessive permissions, and supply-chain risks.
