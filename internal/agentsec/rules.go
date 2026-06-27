@@ -60,20 +60,14 @@ var injectionKeywords = []string{
 }
 
 func rulePromptInjection(content, filePath string) []Finding {
-	lower := strings.ToLower(content)
-	lowerLines := strings.Split(lower, "\n")
+	folded := foldForMatch(content)
+	origLines := strings.Split(strings.ToLower(content), "\n")
 	var findings []Finding
 	for _, kw := range injectionKeywords {
-		if !strings.Contains(lower, kw) {
+		if !strings.Contains(folded, kw) {
 			continue
 		}
-		line := 0
-		for i, l := range lowerLines {
-			if strings.Contains(l, kw) {
-				line = i + 1
-				break
-			}
-		}
+		line := lineOfFoldedKeyword(content, origLines, kw)
 		findings = append(findings, Finding{
 			RuleID:      "prompt-injection/keyword",
 			Severity:    "CRITICAL",
@@ -86,6 +80,23 @@ func rulePromptInjection(content, filePath string) []Finding {
 		})
 	}
 	return findings
+}
+
+// lineOfFoldedKeyword best-efforts a 1-based line number for a keyword that matched the
+// folded view: first try a raw lowercased substring match per line; else fold each line and
+// match; else 0 (whole-file).
+func lineOfFoldedKeyword(content string, lowerLines []string, kw string) int {
+	for i, l := range lowerLines {
+		if strings.Contains(l, kw) {
+			return i + 1
+		}
+	}
+	for i, l := range strings.Split(content, "\n") {
+		if strings.Contains(foldForMatch(l), kw) {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // ── Hidden unicode ────────────────────────────────────────────────────────────
@@ -101,25 +112,44 @@ func ruleHiddenUnicode(content, filePath string) []Finding {
 	var findings []Finding
 	for i, line := range lines {
 		for _, r := range line {
-			for _, table := range hiddenUnicodeRanges {
-				if unicode.Is(table, r) {
-					findings = append(findings, Finding{
-						RuleID:      "prompt-injection/hidden-unicode",
-						Severity:    "CRITICAL",
-						FilePath:    filePath,
-						Line:        i + 1,
-						Message:     "Hidden unicode character detected (possible prompt injection)",
-						Description: "Zero-width or bidi-override unicode characters can hide instructions from human reviewers.",
-						Remediation: "Remove the hidden characters. Use a hex editor or 'cat -A' to inspect.",
-						Confidence:  0.95,
-					})
-					goto nextLine
-				}
+			if isHiddenRune(r) {
+				findings = append(findings, Finding{
+					RuleID:      "prompt-injection/hidden-unicode",
+					Severity:    "CRITICAL",
+					FilePath:    filePath,
+					Line:        i + 1,
+					Message:     "Hidden unicode character detected (possible prompt injection)",
+					Description: "Zero-width, bidi-override, or format unicode characters can hide instructions from human reviewers.",
+					Remediation: "Remove the hidden characters. Use a hex editor or 'cat -A' to inspect.",
+					Confidence:  0.95,
+				})
+				break
 			}
 		}
-	nextLine:
 	}
 	return findings
+}
+
+// isHiddenRune reports characters that smuggle/obscure instructions: the curated ranges plus
+// any Unicode format char and word-joiner / variation-selector blocks.
+func isHiddenRune(r rune) bool {
+	for _, table := range hiddenUnicodeRanges {
+		if unicode.Is(table, r) {
+			return true
+		}
+	}
+	if unicode.Is(unicode.Cf, r) {
+		return true
+	}
+	// Word joiner / invisible operators U+2060–U+2064 (also in Cf, belt-and-suspenders).
+	if r >= 0x2060 && r <= 0x2064 {
+		return true
+	}
+	// Variation selectors U+FE00–U+FE0F.
+	if r >= 0xFE00 && r <= 0xFE0F {
+		return true
+	}
+	return false
 }
 
 // ── MCP host checks ───────────────────────────────────────────────────────────
@@ -378,8 +408,9 @@ func scanLinePatterns(content, filePath string, patterns []*regexp.Regexp, tmpl 
 	lines := strings.Split(content, "\n")
 	var findings []Finding
 	for i, line := range lines {
+		folded := foldForMatch(line)
 		for _, re := range patterns {
-			if re.MatchString(line) {
+			if re.MatchString(line) || re.MatchString(folded) {
 				f := tmpl
 				f.FilePath = filePath
 				f.Line = i + 1
