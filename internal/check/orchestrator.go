@@ -51,6 +51,11 @@ func (o *Orchestrator) CheckWith(ctx context.Context, name, version string, deep
 	}
 	signals = append(signals, Typosquat(name, md.WeeklyLoads, o.Eco.PopularList()))
 	signals = append(signals, Popularity(md))
+	if ph, ok := o.Eco.(seam.PublisherHistorian); ok {
+		if cur, others, err := ph.Publishers(ctx, name, version); err == nil && cur != "" && len(others) > 0 {
+			signals = append(signals, MaintainerChange(others, []string{cur}))
+		}
+	}
 	advs, lookupErr := o.Intel.Lookup(ctx, o.Eco.Name(), name, version)
 	if len(advs) > 0 {
 		signals = append(signals, KnownBad(advs)) // denylist/OSV hits (BLOCK dominates ERROR)

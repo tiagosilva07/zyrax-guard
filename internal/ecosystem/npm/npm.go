@@ -148,6 +148,47 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	return artifact.ExtractTarGz(b, artifact.DefaultLimits())
 }
 
+type publisherPackument struct {
+	DistTags map[string]string `json:"dist-tags"`
+	Versions map[string]struct {
+		NpmUser struct {
+			Name string `json:"name"`
+		} `json:"_npmUser"`
+	} `json:"versions"`
+}
+
+// Publishers returns the account that published `version` (or dist-tags.latest when
+// version==""), and the de-duplicated set of accounts that published any OTHER version.
+func (p *Provider) Publishers(ctx context.Context, name, version string) (string, []string, error) {
+	if err := p.ValidateName(name); err != nil {
+		return "", nil, err
+	}
+	var pk publisherPackument
+	code, err := p.http.GetJSON(ctx, p.registryBase+"/"+name, &pk)
+	if err != nil {
+		return "", nil, err
+	}
+	if code != 200 {
+		return "", nil, nil
+	}
+	if version == "" {
+		version = pk.DistTags["latest"]
+	}
+	current := pk.Versions[version].NpmUser.Name
+	seen := map[string]bool{}
+	var others []string
+	for v, info := range pk.Versions {
+		if v == version || info.NpmUser.Name == "" || info.NpmUser.Name == current {
+			continue
+		}
+		if !seen[info.NpmUser.Name] {
+			seen[info.NpmUser.Name] = true
+			others = append(others, info.NpmUser.Name)
+		}
+	}
+	return current, others, nil
+}
+
 // Install runs the real `npm install`, passing names as ARGUMENT ARRAY entries.
 // Names are re-validated here as defense in depth — they never touch a shell.
 func (p *Provider) Install(ctx context.Context, names []string, opts seam.InstallOpts) error {

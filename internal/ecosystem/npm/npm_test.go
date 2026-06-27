@@ -118,6 +118,54 @@ func TestExistsDistinguishesAbsentFromUndetermined(t *testing.T) {
 	}
 }
 
+func TestPublishers(t *testing.T) {
+	const doc = `{"dist-tags":{"latest":"2.0.0"},"versions":{` +
+		`"1.0.0":{"_npmUser":{"name":"alice"}},` +
+		`"1.1.0":{"_npmUser":{"name":"alice"}},` +
+		`"2.0.0":{"_npmUser":{"name":"eve"}}}}`
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(doc))
+	}))
+	ctx := context.Background()
+
+	contains := func(xs []string, x string) bool {
+		for _, v := range xs {
+			if v == x {
+				return true
+			}
+		}
+		return false
+	}
+
+	cur, others, err := p.Publishers(ctx, "pkg", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur != "eve" {
+		t.Errorf("latest publisher = %q, want eve", cur)
+	}
+	if !contains(others, "alice") {
+		t.Errorf("others = %v, want alice present", others)
+	}
+	if contains(others, "eve") {
+		t.Errorf("others = %v, must not contain current (eve)", others)
+	}
+
+	cur, others, err = p.Publishers(ctx, "pkg", "1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cur != "alice" {
+		t.Errorf("1.1.0 publisher = %q, want alice", cur)
+	}
+	if !contains(others, "eve") {
+		t.Errorf("others = %v, want eve present", others)
+	}
+	if contains(others, "alice") {
+		t.Errorf("others = %v, must not contain current (alice)", others)
+	}
+}
+
 func npmTarGz(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer

@@ -35,6 +35,18 @@ func (s stubEco) InstallCode(context.Context, string, string) (map[string]string
 	return map[string]string{}, nil
 }
 
+// stubEcoWithPublishers is a stubEco that also implements seam.PublisherHistorian.
+type stubEcoWithPublishers struct {
+	stubEco
+	pubCurrent string
+	pubOthers  []string
+	pubErr     error
+}
+
+func (s stubEcoWithPublishers) Publishers(context.Context, string, string) (string, []string, error) {
+	return s.pubCurrent, s.pubOthers, s.pubErr
+}
+
 type stubIntel struct {
 	advs      []seam.Advisory
 	lookupErr error
@@ -80,6 +92,48 @@ func TestOrchestrator(t *testing.T) {
 	o.Policy = stubPolicy{d: seam.ForceAllow}
 	if o.Check(context.Background(), "nope-xyz", "").Verdict != verdict.Safe {
 		t.Error("policy allow should force SAFE")
+	}
+}
+
+func TestMaintainerChangeWiring(t *testing.T) {
+	md := seam.Metadata{Exists: true, Published: time.Now().AddDate(-5, 0, 0), WeeklyLoads: 9_000_000, Latest: "2.0.0"}
+	base := stubEco{exists: true, md: md, pop: []string{"express"}}
+
+	hasMaintainerChange := func(r verdict.Result) bool {
+		for _, s := range r.Signals {
+			if s.Check == verdict.RuleMaintainerChange && s.Level == verdict.LevelWarn {
+				return true
+			}
+		}
+		return false
+	}
+
+	// current ∉ others, others non-empty → maintainer-change WARN present
+	o := &Orchestrator{
+		Eco:    stubEcoWithPublishers{stubEco: base, pubCurrent: "eve", pubOthers: []string{"alice"}},
+		Intel:  stubIntel{},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	if r := o.Check(context.Background(), "pkg", ""); !hasMaintainerChange(r) {
+		t.Errorf("unseen publisher should produce maintainer-change WARN, got %+v", r.Signals)
+	}
+
+	// current ∈ others → no maintainer-change finding
+	o.Eco = stubEcoWithPublishers{stubEco: base, pubCurrent: "alice", pubOthers: []string{"alice", "bob"}}
+	if r := o.Check(context.Background(), "pkg", ""); hasMaintainerChange(r) {
+		t.Errorf("known publisher must not flag maintainer-change, got %+v", r.Signals)
+	}
+
+	// others empty → no finding (single-version / new-and-unused is a different rule)
+	o.Eco = stubEcoWithPublishers{stubEco: base, pubCurrent: "eve", pubOthers: nil}
+	if r := o.Check(context.Background(), "pkg", ""); hasMaintainerChange(r) {
+		t.Errorf("no prior history must not flag maintainer-change, got %+v", r.Signals)
+	}
+
+	// plain stubEco (no Publishers capability) → unaffected
+	o.Eco = base
+	if r := o.Check(context.Background(), "pkg", ""); hasMaintainerChange(r) {
+		t.Errorf("ecosystem without Publishers must not flag maintainer-change, got %+v", r.Signals)
 	}
 }
 

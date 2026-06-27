@@ -46,6 +46,13 @@ type Ecosystem interface {
 	InstallCode(ctx context.Context, name, version string) (map[string]string, error)
 }
 
+// PublisherHistorian is an OPTIONAL Ecosystem capability. It reports who published a
+// specific version and which OTHER accounts published other versions of the package —
+// used to flag a version shipped by a previously-unseen account (takeover/handoff).
+type PublisherHistorian interface {
+	Publishers(ctx context.Context, name, version string) (current string, others []string, err error)
+}
+
 // ThreatIntel returns known-bad records (OSV plus a bundled denylist).
 type ThreatIntel interface {
 	Lookup(ctx context.Context, ecosystem, name, version string) ([]Advisory, error)
