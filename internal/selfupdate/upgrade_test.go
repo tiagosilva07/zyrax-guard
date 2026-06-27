@@ -2,6 +2,8 @@ package selfupdate
 
 import (
 	"context"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -38,6 +40,59 @@ func TestSelfReplaceUnix(t *testing.T) {
 	fi, _ := os.Stat(target)
 	if fi.Mode().Perm()&0o100 == 0 {
 		t.Fatalf("replaced binary not executable: %v", fi.Mode())
+	}
+}
+
+func TestUpgradeAbortsWhenCosignFails(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("self-replace is Unix-only")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "zyrax-guard")
+	os.WriteFile(target, []byte("OLD"), 0o755)
+	asset := assetName(runtime.GOOS, runtime.GOARCH)
+
+	opts := UpgradeOptions{
+		Current: "0.8.0", Method: MethodBinary, ExecPath: target,
+		Fetch: func(context.Context) (string, error) { return "0.9.0", nil },
+		Download: func(_ context.Context, _, _ string) ([]byte, string, error) {
+			data := []byte("NEWBINARY")
+			return data, sha256Hex(data) + "  " + asset, nil // checksum matches
+		},
+		CosignVerify: func(context.Context, string, string, []byte) error {
+			return errors.New("signature mismatch")
+		},
+	}
+	if err := Upgrade(io.Discard, opts); err == nil {
+		t.Fatal("cosign failure must abort the upgrade")
+	}
+	if b, _ := os.ReadFile(target); string(b) != "OLD" {
+		t.Fatalf("binary must be untouched on cosign failure, got %q", b)
+	}
+}
+
+func TestUpgradeProceedsWhenCosignPasses(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("self-replace is Unix-only")
+	}
+	dir := t.TempDir()
+	target := filepath.Join(dir, "zyrax-guard")
+	os.WriteFile(target, []byte("OLD"), 0o755)
+	asset := assetName(runtime.GOOS, runtime.GOARCH)
+	data := []byte("NEWBINARY")
+	opts := UpgradeOptions{
+		Current: "0.8.0", Method: MethodBinary, ExecPath: target,
+		Fetch: func(context.Context) (string, error) { return "0.9.0", nil },
+		Download: func(_ context.Context, _, _ string) ([]byte, string, error) {
+			return data, sha256Hex(data) + "  " + asset, nil
+		},
+		CosignVerify: func(context.Context, string, string, []byte) error { return nil },
+	}
+	if err := Upgrade(io.Discard, opts); err != nil {
+		t.Fatalf("upgrade should succeed when cosign passes: %v", err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "NEWBINARY" {
+		t.Fatalf("binary should be replaced, got %q", b)
 	}
 }
 

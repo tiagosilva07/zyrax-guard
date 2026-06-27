@@ -80,6 +80,10 @@ type UpgradeOptions struct {
 	Fetch    Fetcher
 	Download Downloader                              // defaults to the GitHub-release downloader
 	Runner   func(name string, args ...string) error // defaults to exec; injectable for tests
+	// CosignVerify verifies the downloaded asset's signature. nil → the default, which
+	// runs `cosign verify-blob` against the asset's .cosign.bundle when cosign is on PATH
+	// and is a no-op (best-effort) when it is not. A non-nil error aborts the upgrade.
+	CosignVerify func(ctx context.Context, version, asset string, assetBytes []byte) error
 }
 
 func assetName(goos, goarch string) string {
@@ -149,7 +153,14 @@ func upgradeBinary(ctx context.Context, w io.Writer, opts UpgradeOptions, latest
 	if err := verifySHA256(data, checksums, asset); err != nil {
 		return fmt.Errorf("verification failed (binary NOT replaced): %w", err)
 	}
-	fmt.Fprintln(w, "checksum OK; replacing binary…")
+	verify := opts.CosignVerify
+	if verify == nil {
+		verify = defaultCosignVerify(w)
+	}
+	if err := verify(ctx, latest, asset, data); err != nil {
+		return fmt.Errorf("cosign verification failed (binary NOT replaced): %w", err)
+	}
+	fmt.Fprintln(w, "checksum + signature OK; replacing binary…")
 	if err := selfReplace(opts.ExecPath, data); err != nil {
 		return fmt.Errorf("replace: %w", err)
 	}
@@ -179,6 +190,51 @@ func selfReplace(path string, newData []byte) error {
 		return err
 	}
 	return os.Rename(tmpName, path)
+}
+
+// cosignIdentityRegexp pins the release-workflow identity that signs Guard's blobs.
+const cosignIdentityRegexp = `^https://github\.com/tiagosilva07/zyrax-guard/\.github/workflows/release\.yml@`
+const cosignIssuer = "https://token.actions.githubusercontent.com"
+
+// defaultCosignVerify verifies asset's keyless cosign signature against its published
+// .cosign.bundle. If cosign is not installed it logs and returns nil (best-effort, as
+// documented). If cosign is present and verification fails, it returns the error.
+func defaultCosignVerify(w io.Writer) func(context.Context, string, string, []byte) error {
+	return func(ctx context.Context, version, asset string, assetBytes []byte) error {
+		if _, err := exec.LookPath("cosign"); err != nil {
+			fmt.Fprintln(w, "cosign not found on PATH — skipping signature verification (checksum-only).")
+			return nil
+		}
+		c := httpx.New([]string{"github.com", "objects.githubusercontent.com"})
+		base := "https://github.com/tiagosilva07/zyrax-guard/releases/download/v" + version + "/"
+		code, bundle, err := c.GetBytes(ctx, base+asset+".cosign.bundle", 1<<20)
+		if err != nil {
+			return fmt.Errorf("download signature bundle: %w", err)
+		}
+		if code != 200 {
+			return fmt.Errorf("signature bundle download: HTTP %d", code)
+		}
+		dir, err := os.MkdirTemp("", "zyrax-cosign-")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(dir)
+		blobPath := filepath.Join(dir, asset)
+		bundlePath := filepath.Join(dir, asset+".cosign.bundle")
+		if err := os.WriteFile(blobPath, assetBytes, 0o600); err != nil {
+			return err
+		}
+		if err := os.WriteFile(bundlePath, bundle, 0o600); err != nil {
+			return err
+		}
+		cmd := exec.CommandContext(ctx, "cosign", "verify-blob",
+			"--bundle", bundlePath,
+			"--certificate-identity-regexp", cosignIdentityRegexp,
+			"--certificate-oidc-issuer", cosignIssuer,
+			blobPath)
+		cmd.Stdout, cmd.Stderr = w, w
+		return cmd.Run()
+	}
 }
 
 // githubDownloader builds a Downloader that fetches the asset and checksums.txt from
