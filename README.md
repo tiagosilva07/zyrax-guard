@@ -171,7 +171,7 @@ Commit `.zyrax/policy.json` — it is the reviewable allowlist for your project.
 zyrax-guard scan --base /tmp/base-lock.json --head package-lock.json --sarif
 ```
 
-Emits SARIF 2.1.0 to stdout. Exit code 0 if no BLOCK; non-zero otherwise.
+Emits SARIF 2.1.0 to stdout. Exit code 0 if no BLOCK or ERROR; non-zero otherwise.
 Add `--strict` to treat WARN as failure.
 
 ---
@@ -357,13 +357,16 @@ Zero added dependencies — the extractor uses stdlib `archive/tar` + `compress/
 
 ---
 
-## The three verdicts
+## Verdicts
 
 | Verdict | Meaning | Default exit code |
 |---|---|---|
 | **SAFE** | No signals worth noting | `0` |
 | **WARN** | Suspicious — review before proceeding | `0` (use `--strict` to make it `1`) |
+| **ERROR** | Guard could not verify (registry/OSV unreachable, 5xx, or rate-limited) — **fails closed** | `1` (always) |
 | **BLOCK** | Strong indicator of malicious or hallucinated package | `1` |
+
+Guard fails closed: if it cannot reach the registry or the malware database, it returns ERROR and exits non-zero rather than letting an unverified package through. Disrupting the network cannot silently bypass the gate.
 
 ---
 
@@ -415,10 +418,10 @@ share policy across a team. (Org-wide policy is a paid drop-in via the `Policy` 
 
 | Context | Exits `1` when |
 |---|---|
-| `check` / `install` / `scan` | a **BLOCK** verdict — or a **WARN** with `--strict` |
+| `check` / `install` / `scan` | a **BLOCK** or **ERROR** verdict — or a **WARN** with `--strict` (ERROR exits 1 regardless of `--strict`) |
 | `scan-agents` | a **CRITICAL** or **HIGH** finding — or **any** finding with `--strict` |
 
-See [The three verdicts](#the-three-verdicts) for package verdict meanings.
+See [Verdicts](#verdicts) for package verdict meanings.
 
 ---
 
