@@ -19,6 +19,7 @@ import (
 	"github.com/tiagosilva07/zyrax-guard/internal/mcp"
 	"github.com/tiagosilva07/zyrax-guard/internal/report"
 	"github.com/tiagosilva07/zyrax-guard/internal/seam"
+	"github.com/tiagosilva07/zyrax-guard/internal/selfupdate"
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
 )
 
@@ -34,7 +35,10 @@ usage:
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
+  zyrax-guard mcp install [--global] [--command binary|npx]  (register Guard with your agent)
   zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
+  zyrax-guard upgrade                                       (update Guard to the latest release)
+  zyrax-guard version [--check]
   zyrax-guard --version
 `
 }
@@ -46,10 +50,15 @@ func run(args []string) int {
 		fmt.Print(usage())
 		return 2
 	}
+	code := dispatch(args)
+	maybeNotify(args[0], args[1:])
+	return code
+}
+
+func dispatch(args []string) int {
 	switch args[0] {
 	case "--version", "version":
-		fmt.Println(version)
-		return 0
+		return cmdVersion(args[1:])
 	case "--help", "-h", "help":
 		fmt.Print(usage())
 		return 0
@@ -67,10 +76,59 @@ func run(args []string) int {
 		return cmdMCP(args[1:])
 	case "init":
 		return cmdInit(args[1:])
+	case "upgrade":
+		return cmdUpgrade(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n%s", args[0], usage())
 		return 2
 	}
+}
+
+// cmdVersion prints the version. With --check it forces an update check (ignoring the
+// daily gate) and prints whether a newer release exists.
+func cmdVersion(args []string) int {
+	check := false
+	for _, a := range args {
+		if a == "--check" || a == "-check" {
+			check = true
+		}
+	}
+	fmt.Println(version)
+	if check {
+		selfupdate.CheckAndNotify(os.Stderr, version, selfupdate.Options{Force: true})
+		if version != "dev" {
+			fmt.Fprintln(os.Stderr, "(checked against registry.npmjs.org)")
+		}
+	}
+	return 0
+}
+
+// quietOutput reports whether the args request machine-readable output, so the update
+// notice stays off stdout for --json/--sarif runs.
+func quietOutput(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--json", "-json", "--sarif", "-sarif":
+			return true
+		}
+	}
+	return false
+}
+
+// maybeNotify prints the daily update notice after a normal command, except for the
+// commands that manage their own output (mcp/init/version/help).
+func maybeNotify(cmd string, args []string) {
+	switch cmd {
+	case "mcp", "init", "version", "--version", "help", "--help", "-h", "upgrade":
+		return
+	}
+	selfupdate.CheckAndNotify(os.Stderr, version, selfupdate.Options{Quiet: quietOutput(args)})
+}
+
+// cmdUpgrade is a stub — the real body lands in Task 9.
+func cmdUpgrade(_ []string) int {
+	fmt.Fprintln(os.Stderr, "upgrade: not yet implemented")
+	return 1
 }
 
 // reorderFlagsFirst moves leading-dash tokens ahead of operands so flags may

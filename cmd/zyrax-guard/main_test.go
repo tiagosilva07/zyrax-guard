@@ -144,3 +144,20 @@ func TestUsageMentionsDeep(t *testing.T) {
 		t.Error("usage should mention --deep")
 	}
 }
+
+func TestVersionCommandPrints(t *testing.T) {
+	// `version` and `--version` keep printing the bare version (exit 0).
+	for _, arg := range []string{"version", "--version"} {
+		if code := run([]string{arg}); code != 0 {
+			t.Errorf("run(%q) exit=%d want 0", arg, code)
+		}
+	}
+}
+
+func TestVersionCheckFlagAccepted(t *testing.T) {
+	// `version --check` is accepted (network is best-effort; just assert it exits 0).
+	t.Setenv("ZYRAX_NO_UPDATE_CHECK", "1") // keep it offline/deterministic
+	if code := run([]string{"version", "--check"}); code != 0 {
+		t.Errorf("version --check exit=%d want 0", code)
+	}
+}
