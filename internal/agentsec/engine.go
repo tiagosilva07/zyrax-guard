@@ -29,31 +29,47 @@ var agentConfigNames = map[string]bool{
 
 // ScanDir scans root for agent config files and returns all findings above
 // the minimum confidence threshold.
-func ScanDir(root string) ([]Finding, []string, error) {
-	files, err := discoverAgentFiles(root)
-	if err != nil {
-		return nil, nil, err
+//
+// Inline `zyrax-allow` / `zyrax-allow-file` suppression directives live INSIDE
+// the scanned files, which are untrusted in the audit threat model. When
+// ignoreAllow is true (strict/audit/CI mode) the filter is skipped entirely so
+// in-file directives cannot hide anything; suppressed stays 0. When false, the
+// filter is applied per file and the number of dropped findings is returned in
+// suppressed so callers can always surface that suppression occurred.
+func ScanDir(root string, ignoreAllow bool) (findings []Finding, scanned []string, suppressed int, err error) {
+	files, derr := discoverAgentFiles(root)
+	if derr != nil {
+		return nil, nil, 0, derr
 	}
 	var all []Finding
 	rel := make([]string, len(files))
 	for i, f := range files {
 		rel[i], _ = filepath.Rel(root, f)
-		fi, err := os.Stat(f)
-		if err != nil || fi.Size() > maxFileSizeBytes {
+		fi, statErr := os.Stat(f)
+		if statErr != nil || fi.Size() > maxFileSizeBytes {
 			continue
 		}
-		content, err := os.ReadFile(f)
-		if err != nil {
+		content, readErr := os.ReadFile(f)
+		if readErr != nil {
 			continue
 		}
+		var fileFindings []Finding
 		for _, finding := range evaluateFile(root, rel[i], string(content)) {
 			if finding.Confidence >= minConfidence {
-				all = append(all, finding)
+				fileFindings = append(fileFindings, finding)
 			}
 		}
+		if !ignoreAllow {
+			n := len(fileFindings)
+			fileFindings = applyAllowDirectives(string(content), fileFindings)
+			suppressed += n - len(fileFindings)
+		}
+		all = append(all, fileFindings...)
 	}
+	// Symlink findings are whole-file structural and have no per-file directive
+	// context, so they are never suppressed.
 	all = append(all, findSymlinkedConfigs(root)...)
-	return all, rel, nil
+	return all, rel, suppressed, nil
 }
 
 // SeverityOrder lists severities from most to least critical.
@@ -201,7 +217,7 @@ func evaluateFile(root, relPath, content string) []Finding {
 	findings = append(findings, ruleExcessivePermissions(content, relPath)...)
 	findings = append(findings, ruleHooks(content, relPath)...)
 	findings = append(findings, ruleSupplyChain(content, relPath, root)...)
-	return applyAllowDirectives(content, findings)
+	return findings
 }
 
 // applyAllowDirectives drops findings suppressed by an inline `zyrax-allow[: prefix]`

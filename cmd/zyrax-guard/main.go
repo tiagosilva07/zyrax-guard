@@ -545,29 +545,37 @@ func cmdScanAgents(args []string) int {
 		dir = fs.Arg(0)
 	}
 
-	findings, files, err := agentsec.ScanDir(dir)
+	// In strict/audit mode the scanned configs are untrusted, so in-file
+	// zyrax-allow suppression directives are ignored entirely.
+	findings, files, suppressed, err := agentsec.ScanDir(dir, *strict)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "scan-agents:", err)
 		return 2
 	}
 
 	if *asSARIF {
+		// SARIF schema is unchanged here; suppression count is surfaced via
+		// stderr so it is never silent (follow-up: SARIF run.properties).
 		if err := agentsec.SARIF(os.Stdout, findings); err != nil {
 			fmt.Fprintln(os.Stderr, "scan-agents:", err)
 			return 2
+		}
+		if suppressed > 0 {
+			fmt.Fprintf(os.Stderr, "  ⚠ %d finding(s) suppressed by zyrax-allow directives\n", suppressed)
 		}
 		return agentScanExit(findings, *strict)
 	}
 
 	if *asJSON {
 		type jsonOut struct {
-			Dir      string             `json:"dir"`
-			Files    []string           `json:"files_scanned"`
-			Findings []agentsec.Finding `json:"findings"`
+			Dir        string             `json:"dir"`
+			Files      []string           `json:"files_scanned"`
+			Findings   []agentsec.Finding `json:"findings"`
+			Suppressed int                `json:"suppressed"`
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(jsonOut{Dir: dir, Files: files, Findings: findings})
+		_ = enc.Encode(jsonOut{Dir: dir, Files: files, Findings: findings, Suppressed: suppressed})
 		return agentScanExit(findings, *strict)
 	}
 
@@ -586,7 +594,11 @@ func cmdScanAgents(args []string) int {
 	fmt.Fprintf(os.Stdout, "  %sFound %d file(s):%s %s\n\n", cyan, len(files), reset, strings.Join(files, ", "))
 
 	if len(findings) == 0 {
-		fmt.Fprintf(os.Stdout, "  %s✓ No issues found%s\n\n", green, reset)
+		fmt.Fprintf(os.Stdout, "  %s✓ No issues found%s\n", green, reset)
+		if suppressed > 0 {
+			fmt.Fprintf(os.Stdout, "  %s⚠ %d finding(s) suppressed by zyrax-allow directives%s\n", yellow, suppressed, reset)
+		}
+		fmt.Fprintln(os.Stdout)
 		return 0
 	}
 
@@ -605,7 +617,11 @@ func cmdScanAgents(args []string) int {
 		fmt.Fprintf(os.Stdout, "           → %s\n\n", f.Remediation)
 	}
 
-	fmt.Fprintf(os.Stdout, "  %s%s%s\n\n", red, agentsec.SummaryLine(findings), reset)
+	fmt.Fprintf(os.Stdout, "  %s%s%s\n", red, agentsec.SummaryLine(findings), reset)
+	if suppressed > 0 {
+		fmt.Fprintf(os.Stdout, "  %s⚠ %d finding(s) suppressed by zyrax-allow directives%s\n", yellow, suppressed, reset)
+	}
+	fmt.Fprintln(os.Stdout)
 
 	return agentScanExit(findings, *strict)
 }

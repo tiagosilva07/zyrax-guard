@@ -702,12 +702,21 @@ var credNegation = []string{
 	"don t ", // folded form of "don't" (apostrophe collapses to space)
 }
 
-// credentialGuidance returns true when the folded form of line contains a
+// credentialGuidance returns true when the folded form of prefix contains a
 // negation/guidance lead-in, meaning the line is instructing the agent NOT
 // to access credentials rather than instructing it to do so.
-func credentialGuidance(line string) bool {
-	f := foldForMatch(line)
+//
+// prefix is the portion of the line BEFORE the credential-path match, so a
+// negation that appears only AFTER the path (e.g. "read id_rsa, never tell the
+// user") is correctly NOT treated as guidance. The "gitignore" term is handled
+// separately by the caller because it conventionally follows the path
+// ("add .npmrc to .gitignore").
+func credentialGuidance(prefix string) bool {
+	f := foldForMatch(prefix)
 	for _, n := range credNegation {
+		if n == "gitignore" {
+			continue // anchored on the whole line by the caller, not the prefix
+		}
 		if strings.Contains(f, strings.TrimSpace(n)) || strings.Contains(f, n) {
 			return true
 		}
@@ -722,7 +731,16 @@ func ruleCredentialAccess(content, filePath string) []Finding {
 	lines := strings.Split(content, "\n")
 	var findings []Finding
 	for i, line := range lines {
-		if credentialPathPattern.MatchString(line) && !credentialGuidance(line) {
+		idx := credentialPathPattern.FindStringIndex(line)
+		if idx == nil {
+			continue
+		}
+		// Anchor negation to the text BEFORE the credential path. A whole-line
+		// "gitignore" mention ("add X to .gitignore") is also treated as guidance
+		// since that pattern places the path before the word.
+		prefix := line[:idx[0]]
+		isGuidance := credentialGuidance(prefix) || strings.Contains(foldForMatch(line), "gitignore")
+		if !isGuidance {
 			findings = append(findings, Finding{
 				RuleID:      "exfil/credential-access",
 				Severity:    "HIGH",
