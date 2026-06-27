@@ -382,8 +382,8 @@ func cmdScan(args []string) int {
 	}
 	// With --deep, each added dep downloads + inspects its artifact (sequential).
 	// Bound the whole pass with an overall deadline so a large diff can't run
-	// unbounded in CI; once spent, remaining deps degrade to a metadata-only check
-	// (best-effort — a deadline never turns a SAFE/WARN into a false BLOCK).
+	// unbounded in CI; once spent, packages that cannot be fully verified within
+	// the budget yield ERROR (exit 1) — fail closed, not silently safe.
 	ctx, cancel := scanDeepContext(context.Background(), *deep)
 	defer cancel()
 	var results []verdict.Result

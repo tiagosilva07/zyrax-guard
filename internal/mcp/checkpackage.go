@@ -159,6 +159,8 @@ func renderForAgent(r verdict.Result) string {
 	switch r.Verdict {
 	case verdict.Block:
 		b.WriteString("\n\nRECOMMENDATION: do NOT install this package.")
+	case verdict.Error:
+		b.WriteString("\n\nRECOMMENDATION: do NOT install — Guard could not verify this package (registry or malware database unreachable). Try again or investigate before installing.")
 	case verdict.Warn:
 		b.WriteString("\n\nRECOMMENDATION: review carefully before installing.")
 	default:
