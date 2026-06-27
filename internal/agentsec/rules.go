@@ -169,7 +169,9 @@ type mcpConfig struct {
 	} `json:"mcpServers"`
 }
 
-var tunnelPatterns = regexp.MustCompile(`ngrok\.io|localtunnel\.me|serveo\.net|localhost\.run|trycloudflare\.com`)
+var tunnelPatterns = regexp.MustCompile(
+	`ngrok\.io|ngrok-free\.app|ngrok\.app|localtunnel\.me|loca\.lt|serveo\.net|` +
+		`localhost\.run|trycloudflare\.com|tunnelmole\.com|bore\.pub|pinggy\.io|lhr\.life|devtunnels\.ms`)
 
 func ruleMCPHosts(content, filePath string) []Finding {
 	if !strings.HasSuffix(filePath, ".json") {
@@ -196,7 +198,7 @@ func ruleMCPHosts(content, filePath string) []Finding {
 		sName := sanitizeExcerpt(name)
 		sURL := sanitizeExcerpt(rawURL)
 		sHost := sanitizeExcerpt(host)
-		if u.Scheme == "http" {
+		if strings.ToLower(u.Scheme) == "http" {
 			findings = append(findings, Finding{
 				RuleID:      "mcp-host/non-https",
 				Severity:    "HIGH",
@@ -521,9 +523,10 @@ var mcpDangerousShells = map[string]bool{
 var mcpDangerousEnvKeys = []string{
 	"LD_PRELOAD", "LD_LIBRARY_PATH", "NODE_OPTIONS", "PYTHONSTARTUP",
 	"BASH_ENV", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+	"GIT_SSH_COMMAND", "PYTHONPATH", "ELECTRON_RUN_AS_NODE", "PERL5OPT", "RUBYOPT", "RUBYLIB",
 }
 
-var mcpTmpPath = regexp.MustCompile(`(?i)^(/tmp/|/var/tmp/|\\[Tt]emp\\|%[Tt][Ee][Mm][Pp]%)`)
+var mcpTmpPath = regexp.MustCompile(`(?i)^(/tmp/|/var/tmp/|/dev/shm/|~?/downloads/|\\[Tt]emp\\|%[Tt][Ee][Mm][Pp]%)`)
 
 func ruleMCPCommands(content, filePath string) []Finding {
 	if !strings.HasSuffix(filePath, ".json") {
@@ -580,6 +583,38 @@ func ruleMCPCommands(content, filePath string) []Finding {
 					Confidence:  0.90,
 				})
 			}
+			// Interpreter + inline-eval (node -e, python -c/-m, deno, ruby/perl -e)
+			evalFlags := map[string][]string{
+				"node": {"-e", "--eval"}, "deno": {"eval"},
+				"python": {"-c", "-m"}, "python3": {"-c", "-m"},
+				"ruby": {"-e"}, "perl": {"-e"},
+			}
+			if flags, ok := evalFlags[base]; ok && hasAnyArg(srv.Args, flags) {
+				findings = append(findings, Finding{
+					RuleID:      "mcp-exec/interpreter-eval",
+					Severity:    "HIGH",
+					FilePath:    filePath,
+					Message:     "MCP server '" + sName + "' runs an interpreter with an inline-eval flag",
+					Description: "An interpreter with -e/-c/-m executes arbitrary code at MCP server startup.",
+					Remediation: "Replace inline code with a committed, reviewed script file at a fixed path.",
+					Confidence:  0.9,
+				})
+			}
+			// `env <shell-or-interpreter> ...` wrapper hides the real command basename.
+			if base == "env" && len(srv.Args) > 0 {
+				inner := strings.ToLower(filepath.Base(srv.Args[0]))
+				if mcpDangerousShells[inner] || evalFlags[inner] != nil {
+					findings = append(findings, Finding{
+						RuleID:      "mcp-exec/env-wrapper",
+						Severity:    "HIGH",
+						FilePath:    filePath,
+						Message:     "MCP server '" + sName + "' uses 'env' to launch a shell/interpreter",
+						Description: "Wrapping a shell or interpreter in 'env' obscures the executed command.",
+						Remediation: "Invoke a specific reviewed binary directly instead of via 'env'.",
+						Confidence:  0.85,
+					})
+				}
+			}
 		}
 
 		for k := range srv.Env {
@@ -599,6 +634,18 @@ func ruleMCPCommands(content, filePath string) []Finding {
 		}
 	}
 	return findings
+}
+
+// hasAnyArg reports whether any element of args matches any element of want (exact string equality).
+func hasAnyArg(args, want []string) bool {
+	for _, a := range args {
+		for _, w := range want {
+			if a == w {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ── Credential access ─────────────────────────────────────────────────────────
