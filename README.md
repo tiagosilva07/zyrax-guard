@@ -335,6 +335,9 @@ Guard runs against public registry metadata only — no local execution, no inst
 | **Lockfile integrity** | *(scan only)* Resolved URL or integrity hash changed → **BLOCK** |
 | **Maintainer change** | *(scan only)* New version published by a previously unseen maintainer → **WARN** |
 
+Transient registry/OSV failures (429 or 5xx) are retried with backoff (honoring `Retry-After`)
+before Guard gives up; only a persistent failure yields **ERROR** (fail closed — see [Verdicts](#verdicts)).
+
 ---
 
 ## Deep check (`--deep`)
