@@ -71,7 +71,7 @@ func (p *Provider) Exists(ctx context.Context, name, _ string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return code == 200, nil
+	return httpx.ExistsFromStatus(code)
 }
 
 type pypiJSON struct {

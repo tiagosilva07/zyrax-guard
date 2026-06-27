@@ -94,3 +94,24 @@ func TestGetBytes_OverCap(t *testing.T) {
 		t.Fatal("over-cap body must error")
 	}
 }
+
+func TestExistsFromStatus(t *testing.T) {
+	cases := []struct {
+		code       int
+		wantExists bool
+		wantErr    bool
+	}{
+		{200, true, false},
+		{404, false, false},
+		{500, false, true},
+		{503, false, true},
+		{429, false, true},
+		{403, false, true},
+	}
+	for _, c := range cases {
+		exists, err := ExistsFromStatus(c.code)
+		if exists != c.wantExists || (err != nil) != c.wantErr {
+			t.Errorf("ExistsFromStatus(%d)=(%v,%v) want (%v,err=%v)", c.code, exists, err, c.wantExists, c.wantErr)
+		}
+	}
+}
