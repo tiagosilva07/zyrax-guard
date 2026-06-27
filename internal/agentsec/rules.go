@@ -702,26 +702,41 @@ var credNegation = []string{
 	"don t ", // folded form of "don't" (apostrophe collapses to space)
 }
 
-// credentialGuidance returns true when the folded form of prefix contains a
-// negation/guidance lead-in, meaning the line is instructing the agent NOT
-// to access credentials rather than instructing it to do so.
+// credentialGuidance returns true when the folded form of window contains a
+// negation/guidance lead-in, meaning the immediate clause before the credential
+// path is instructing the agent NOT to access credentials rather than directing
+// it to do so.
 //
-// prefix is the portion of the line BEFORE the credential-path match, so a
-// negation that appears only AFTER the path (e.g. "read id_rsa, never tell the
-// user") is correctly NOT treated as guidance. The "gitignore" term is handled
-// separately by the caller because it conventionally follows the path
-// ("add .npmrc to .gitignore").
-func credentialGuidance(prefix string) bool {
-	f := foldForMatch(prefix)
+// window must be the text in the IMMEDIATE clause before the credential-path
+// match (i.e. the bounded 30-char prefix after stripping any prior clause via
+// lastClause). The "gitignore" term is handled separately by the caller because
+// it conventionally follows the path ("add .npmrc to .gitignore").
+func credentialGuidance(window string) bool {
+	f := foldForMatch(window)
 	for _, n := range credNegation {
 		if n == "gitignore" {
-			continue // anchored on the whole line by the caller, not the prefix
+			continue // anchored on the whole line by the caller, not the window
 		}
 		if strings.Contains(f, strings.TrimSpace(n)) || strings.Contains(f, n) {
 			return true
 		}
 	}
 	return false
+}
+
+// lastClause returns the portion of s that follows the last clause break
+// (comma, period, or semicolon). If no clause break is present the whole
+// string is returned. This lets credentialGuidance operate on just the
+// immediate clause preceding a credential path, so a negation word in an
+// earlier clause (e.g. "never mind, read .env") is not mistaken for guidance.
+func lastClause(s string) string {
+	for i := len(s) - 1; i >= 0; i-- {
+		switch s[i] {
+		case ',', '.', ';':
+			return s[i+1:]
+		}
+	}
+	return s
 }
 
 func ruleCredentialAccess(content, filePath string) []Finding {
@@ -735,11 +750,21 @@ func ruleCredentialAccess(content, filePath string) []Finding {
 		if idx == nil {
 			continue
 		}
-		// Anchor negation to the text BEFORE the credential path. A whole-line
-		// "gitignore" mention ("add X to .gitignore") is also treated as guidance
-		// since that pattern places the path before the word.
-		prefix := line[:idx[0]]
-		isGuidance := credentialGuidance(prefix) || strings.Contains(foldForMatch(line), "gitignore")
+		// Bound the negation search to the ~30 characters immediately before the
+		// credential path. This prevents a negation word in an earlier clause
+		// (e.g. "never mind, read .env") from suppressing the finding.
+		winStart := idx[0] - 30
+		if winStart < 0 {
+			winStart = 0
+		}
+		window := line[winStart:idx[0]]
+		// Further restrict to the final clause within the window: a clause break
+		// (comma, period, semicolon) means the negation was in a prior clause and
+		// does not govern the credential path.
+		effectiveWindow := lastClause(window)
+		// gitignore convention places the path BEFORE the word; check the whole
+		// line so "add .npmrc to .gitignore" is still treated as guidance.
+		isGuidance := credentialGuidance(effectiveWindow) || strings.Contains(foldForMatch(line), "gitignore")
 		if !isGuidance {
 			findings = append(findings, Finding{
 				RuleID:      "exfil/credential-access",
