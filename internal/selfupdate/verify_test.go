@@ -20,3 +20,13 @@ func TestVerifySHA256(t *testing.T) {
 		t.Fatal("expected error when filename absent from checksums")
 	}
 }
+
+func TestVerifySHA256_CRLF(t *testing.T) {
+	data := []byte("hello zyrax")
+	real := sha256Hex(data)
+	// checksums.txt with Windows CRLF line endings — must still match.
+	checksums := "deadbeef  other-file\r\n" + real + "  zyrax-guard-linux-amd64\r\n"
+	if err := verifySHA256(data, checksums, "zyrax-guard-linux-amd64"); err != nil {
+		t.Fatalf("CRLF checksums.txt should match: %v", err)
+	}
+}

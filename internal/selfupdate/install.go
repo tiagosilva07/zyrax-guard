@@ -37,6 +37,7 @@ func sha256Hex(b []byte) string {
 func verifySHA256(data []byte, checksums, filename string) error {
 	want := ""
 	for _, line := range strings.Split(checksums, "\n") {
+		line = strings.TrimRight(line, "\r") // tolerate CRLF-terminated checksums.txt
 		f := strings.Fields(line)
 		if len(f) == 2 && f[1] == filename {
 			want = strings.ToLower(f[0])
@@ -183,15 +184,28 @@ func selfReplace(path string, newData []byte) error {
 // githubDownloader builds a Downloader that fetches the asset and checksums.txt from
 // the GitHub release for version (tag "v<version>").
 func githubDownloader(c *httpx.Client) Downloader {
+	return githubDownloaderBase(c, "https://github.com/tiagosilva07/zyrax-guard/releases/download/")
+}
+
+// githubDownloaderBase is the testable core of githubDownloader. repoBase is the
+// URL prefix before the version segment, e.g.
+// "https://github.com/.../releases/download/" — the downloader appends "v<version>/".
+func githubDownloaderBase(c *httpx.Client, repoBase string) Downloader {
 	return func(ctx context.Context, version, asset string) ([]byte, string, error) {
-		base := "https://github.com/tiagosilva07/zyrax-guard/releases/download/v" + version + "/"
-		_, assetBytes, err := c.GetBytes(ctx, base+asset, 64<<20)
+		base := repoBase + "v" + version + "/"
+		code, assetBytes, err := c.GetBytes(ctx, base+asset, 64<<20)
 		if err != nil {
 			return nil, "", err
 		}
-		_, sums, err := c.GetBytes(ctx, base+"checksums.txt", 1<<20)
+		if code != 200 {
+			return nil, "", fmt.Errorf("download %s: HTTP %d", asset, code)
+		}
+		code, sums, err := c.GetBytes(ctx, base+"checksums.txt", 1<<20)
 		if err != nil {
 			return nil, "", err
+		}
+		if code != 200 {
+			return nil, "", fmt.Errorf("download checksums.txt: HTTP %d", code)
 		}
 		return assetBytes, string(sums), nil
 	}
