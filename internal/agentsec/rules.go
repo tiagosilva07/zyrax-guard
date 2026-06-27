@@ -27,14 +27,10 @@ func sanitizeExcerpt(s string) string {
 			b.WriteString("…")
 			break
 		}
-		var hidden bool
-		for _, table := range hiddenUnicodeRanges {
-			if unicode.Is(table, r) {
-				hidden = true
-				break
-			}
-		}
-		if hidden {
+		// Use the same broadened hidden-rune check as ruleHiddenUnicode so that
+		// detected characters (unicode.Cf, variation selectors FE00–FE0F, etc.)
+		// cannot leak into Finding.Message excerpts.
+		if isHiddenRune(r) {
 			continue
 		}
 		if r < 0x20 && r != '\t' { // drop control chars except tab
@@ -64,10 +60,15 @@ func rulePromptInjection(content, filePath string) []Finding {
 	origLines := strings.Split(strings.ToLower(content), "\n")
 	var findings []Finding
 	for _, kw := range injectionKeywords {
-		if !strings.Contains(folded, kw) {
+		// Fold the keyword with the same transform applied to content so that
+		// keywords containing ":" (e.g. "system prompt:", "new objective:") still
+		// match: foldForMatch collapses ":" to a space on both sides, making the
+		// comparison symmetric. The original kw is preserved for the user message.
+		fkw := foldForMatch(kw)
+		if !strings.Contains(folded, fkw) {
 			continue
 		}
-		line := lineOfFoldedKeyword(content, origLines, kw)
+		line := lineOfFoldedKeyword(content, origLines, fkw)
 		findings = append(findings, Finding{
 			RuleID:      "prompt-injection/keyword",
 			Severity:    "CRITICAL",
@@ -84,7 +85,8 @@ func rulePromptInjection(content, filePath string) []Finding {
 
 // lineOfFoldedKeyword best-efforts a 1-based line number for a keyword that matched the
 // folded view: first try a raw lowercased substring match per line; else fold each line and
-// match; else 0 (whole-file).
+// match; else 0 (whole-file). kw must be the pre-folded form (via foldForMatch) so that
+// keywords with punctuation (e.g. "system prompt") align with the lowercased raw lines.
 func lineOfFoldedKeyword(content string, lowerLines []string, kw string) int {
 	for i, l := range lowerLines {
 		if strings.Contains(l, kw) {
