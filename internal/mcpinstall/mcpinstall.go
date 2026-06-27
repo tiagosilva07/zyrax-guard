@@ -35,7 +35,7 @@ func looksInstalled(execPath string) bool {
 	if base != "zyrax-guard" {
 		return false
 	}
-	p := filepath.ToSlash(execPath)
+	p := strings.ToLower(filepath.ToSlash(execPath))
 	for _, frag := range []string{"/tmp/", "/_npx/", "/.npm/", "/npm-cache/", "/temp/"} {
 		if strings.Contains(p, frag) {
 			return false
