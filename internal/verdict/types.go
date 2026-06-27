@@ -9,21 +9,25 @@ const (
 	LevelInfo  Level = iota // contributes context, never escalates past SAFE
 	LevelWarn               // escalates to WARN
 	LevelBlock              // escalates to BLOCK
+	LevelError              // could-not-determine — escalates to ERROR (fail closed)
 )
 
 // Verdict is the overall decision for a package.
 type Verdict int
 
 const (
-	Safe Verdict = iota
-	Warn
-	Block
+	Safe  Verdict = iota
+	Warn          // suspicious
+	Error         // could not verify — fails closed (exits non-zero)
+	Block         // strong malicious/hallucinated signal
 )
 
 func (v Verdict) String() string {
 	switch v {
 	case Block:
 		return "BLOCK"
+	case Error:
+		return "ERROR"
 	case Warn:
 		return "WARN"
 	default:

@@ -48,3 +48,9 @@ func TestSARIFShapeMatchesPlatform(t *testing.T) {
 		t.Error("message text empty")
 	}
 }
+
+func TestSARIFLevelForError(t *testing.T) {
+	if levelString(verdict.LevelError) != "error" {
+		t.Errorf("LevelError must map to SARIF \"error\", got %q", levelString(verdict.LevelError))
+	}
+}

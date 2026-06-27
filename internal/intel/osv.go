@@ -48,11 +48,10 @@ func (o *OSV) Lookup(ctx context.Context, ecosystem, name, version string) ([]se
 	}
 	advs, err := o.query(ctx, body)
 	if err != nil {
-		// OSV is a best-effort supplement; the bundled denylist is the
-		// authoritative floor. Tolerate OSV downtime rather than failing the
-		// whole check (known limitation: OSV-only malware is missed while OSV
-		// is unreachable).
-		return out, nil
+		// OSV is degraded. Return the denylist floor we already have PLUS the error
+		// so the orchestrator can fail closed (a security gate must not treat
+		// "malware DB unreachable" as "no malware found").
+		return out, fmt.Errorf("OSV malware lookup failed: %w", err)
 	}
 	return append(out, advs...), nil
 }

@@ -34,3 +34,27 @@ func TestVerdictString(t *testing.T) {
 		t.Fatal("verdict strings wrong")
 	}
 }
+
+func TestDecideErrorVerdict(t *testing.T) {
+	// A LevelError signal yields the ERROR verdict...
+	r := Decide("npm", "x", "", []Signal{{Check: "check-error", Level: LevelError, Message: "registry unreachable"}})
+	if r.VerdictStr != "ERROR" || r.Verdict != Error {
+		t.Fatalf("got %q/%d, want ERROR", r.VerdictStr, r.Verdict)
+	}
+	// ...but a concrete BLOCK still dominates ERROR.
+	r2 := Decide("npm", "x", "", []Signal{
+		{Check: "check-error", Level: LevelError, Message: "osv down"},
+		{Check: "known-malware", Level: LevelBlock, Message: "malware"},
+	})
+	if r2.Verdict != Block {
+		t.Fatalf("BLOCK must dominate ERROR, got %s", r2.VerdictStr)
+	}
+	// ERROR outranks WARN.
+	r3 := Decide("npm", "x", "", []Signal{
+		{Check: "new-and-unused", Level: LevelWarn, Message: "new"},
+		{Check: "check-error", Level: LevelError, Message: "osv down"},
+	})
+	if r3.Verdict != Error {
+		t.Fatalf("ERROR must outrank WARN, got %s", r3.VerdictStr)
+	}
+}

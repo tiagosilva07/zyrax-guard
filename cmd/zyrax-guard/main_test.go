@@ -189,3 +189,12 @@ func TestMCPBareStillRejectsArgs(t *testing.T) {
 		t.Errorf("mcp bogus exit=%d want 2", code)
 	}
 }
+
+func TestExitForVerdictErrorAlwaysFails(t *testing.T) {
+	if exitForVerdict("ERROR", false) != 1 {
+		t.Error("ERROR must exit 1 even without --strict")
+	}
+	if exitForVerdict("ERROR", true) != 1 {
+		t.Error("ERROR must exit 1 with --strict")
+	}
+}

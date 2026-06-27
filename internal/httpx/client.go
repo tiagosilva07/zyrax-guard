@@ -131,6 +131,21 @@ func (c *Client) GetBytes(ctx context.Context, rawurl string, maxBytes int64) (i
 	return resp.StatusCode, b, nil
 }
 
+// ExistsFromStatus maps a registry GET status to package-existence semantics:
+// 200 → exists, 404 → definitively absent, anything else (5xx/429/403/…) → an
+// error, because the registry did not give us a determinate answer. Callers that
+// cannot determine existence must fail closed rather than treat it as "absent".
+func ExistsFromStatus(code int) (bool, error) {
+	switch code {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("registry returned status %d (could not determine existence)", code)
+	}
+}
+
 // PostJSON sends an already-built POST request, enforcing the same host allowlist,
 // and returns the status code + raw body (capped). For the few APIs (OSV) that
 // require POST. Body must already be set on req.
