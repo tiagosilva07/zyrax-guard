@@ -11,16 +11,17 @@ import (
 )
 
 type stubEco struct {
-	exists  bool
-	md      seam.Metadata
-	pop     []string
-	code    map[string]string
-	codeErr error
+	exists    bool
+	existsErr error
+	md        seam.Metadata
+	pop       []string
+	code      map[string]string
+	codeErr   error
 }
 
 func (s stubEco) Name() string                                              { return "npm" }
 func (s stubEco) ValidateName(string) error                                 { return nil }
-func (s stubEco) Exists(context.Context, string, string) (bool, error)      { return s.exists, nil }
+func (s stubEco) Exists(context.Context, string, string) (bool, error)      { return s.exists, s.existsErr }
 func (s stubEco) Metadata(context.Context, string) (seam.Metadata, error)   { return s.md, nil }
 func (s stubEco) PopularList() []string                                     { return s.pop }
 func (s stubEco) Install(context.Context, []string, seam.InstallOpts) error { return nil }
@@ -34,10 +35,13 @@ func (s stubEco) InstallCode(context.Context, string, string) (map[string]string
 	return map[string]string{}, nil
 }
 
-type stubIntel struct{ advs []seam.Advisory }
+type stubIntel struct {
+	advs      []seam.Advisory
+	lookupErr error
+}
 
 func (s stubIntel) Lookup(context.Context, string, string, string) ([]seam.Advisory, error) {
-	return s.advs, nil
+	return s.advs, s.lookupErr
 }
 
 type stubPolicy struct{ d seam.Decision }
@@ -127,5 +131,41 @@ func TestCheckWithDeep(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("InstallCode error should produce an Info signal, got %+v", r.Signals)
+	}
+}
+
+func TestCheck_RegistryErrorFailsClosed(t *testing.T) {
+	o := &Orchestrator{
+		Eco:    stubEco{existsErr: errors.New("timeout")},
+		Intel:  stubIntel{},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	r := o.Check(context.Background(), "pkg", "")
+	if r.Verdict != verdict.Error {
+		t.Fatalf("registry error must be ERROR (fail closed), got %s", r.VerdictStr)
+	}
+}
+
+func TestCheck_OSVDownFailsClosed(t *testing.T) {
+	o := &Orchestrator{
+		Eco:    stubEco{exists: true},
+		Intel:  stubIntel{lookupErr: errors.New("osv 503")},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	r := o.Check(context.Background(), "pkg", "")
+	if r.Verdict != verdict.Error {
+		t.Fatalf("OSV degradation must be ERROR (fail closed), got %s", r.VerdictStr)
+	}
+}
+
+func TestCheck_OSVDownButDenylistStillBlocks(t *testing.T) {
+	o := &Orchestrator{
+		Eco:    stubEco{exists: true},
+		Intel:  stubIntel{advs: []seam.Advisory{{ID: "denylist", Severity: "critical", Malware: true}}, lookupErr: errors.New("osv 503")},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	r := o.Check(context.Background(), "pkg", "")
+	if r.Verdict != verdict.Block {
+		t.Fatalf("denylist malware must BLOCK even with OSV down, got %s", r.VerdictStr)
 	}
 }

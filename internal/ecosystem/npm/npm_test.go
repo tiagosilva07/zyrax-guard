@@ -94,6 +94,30 @@ func TestNPMInstallCode(t *testing.T) {
 	}
 }
 
+func TestExistsDistinguishesAbsentFromUndetermined(t *testing.T) {
+	var status int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+	}))
+	defer srv.Close()
+	host := srv.Listener.Addr().String()
+	p := New(httpx.New([]string{host}), nil)
+	p.registryBase = "http://" + host
+
+	status = 404
+	if ok, err := p.Exists(context.Background(), "ghost", ""); ok || err != nil {
+		t.Fatalf("404 should be (false,nil), got (%v,%v)", ok, err)
+	}
+	status = 503
+	if ok, err := p.Exists(context.Background(), "ghost", ""); ok || err == nil {
+		t.Fatalf("503 should be (false,error), got (%v,%v)", ok, err)
+	}
+	status = 200
+	if ok, err := p.Exists(context.Background(), "real", ""); !ok || err != nil {
+		t.Fatalf("200 should be (true,nil), got (%v,%v)", ok, err)
+	}
+}
+
 func npmTarGz(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer

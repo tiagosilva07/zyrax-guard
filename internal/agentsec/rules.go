@@ -27,14 +27,10 @@ func sanitizeExcerpt(s string) string {
 			b.WriteString("…")
 			break
 		}
-		var hidden bool
-		for _, table := range hiddenUnicodeRanges {
-			if unicode.Is(table, r) {
-				hidden = true
-				break
-			}
-		}
-		if hidden {
+		// Use the same broadened hidden-rune check as ruleHiddenUnicode so that
+		// detected characters (unicode.Cf, variation selectors FE00–FE0F, etc.)
+		// cannot leak into Finding.Message excerpts.
+		if isHiddenRune(r) {
 			continue
 		}
 		if r < 0x20 && r != '\t' { // drop control chars except tab
@@ -60,20 +56,19 @@ var injectionKeywords = []string{
 }
 
 func rulePromptInjection(content, filePath string) []Finding {
-	lower := strings.ToLower(content)
-	lowerLines := strings.Split(lower, "\n")
+	folded := foldForMatch(content)
+	origLines := strings.Split(strings.ToLower(content), "\n")
 	var findings []Finding
 	for _, kw := range injectionKeywords {
-		if !strings.Contains(lower, kw) {
+		// Fold the keyword with the same transform applied to content so that
+		// keywords containing ":" (e.g. "system prompt:", "new objective:") still
+		// match: foldForMatch collapses ":" to a space on both sides, making the
+		// comparison symmetric. The original kw is preserved for the user message.
+		fkw := foldForMatch(kw)
+		if !strings.Contains(folded, fkw) {
 			continue
 		}
-		line := 0
-		for i, l := range lowerLines {
-			if strings.Contains(l, kw) {
-				line = i + 1
-				break
-			}
-		}
+		line := lineOfFoldedKeyword(content, origLines, fkw)
 		findings = append(findings, Finding{
 			RuleID:      "prompt-injection/keyword",
 			Severity:    "CRITICAL",
@@ -86,6 +81,24 @@ func rulePromptInjection(content, filePath string) []Finding {
 		})
 	}
 	return findings
+}
+
+// lineOfFoldedKeyword best-efforts a 1-based line number for a keyword that matched the
+// folded view: first try a raw lowercased substring match per line; else fold each line and
+// match; else 0 (whole-file). kw must be the pre-folded form (via foldForMatch) so that
+// keywords with punctuation (e.g. "system prompt") align with the lowercased raw lines.
+func lineOfFoldedKeyword(content string, lowerLines []string, kw string) int {
+	for i, l := range lowerLines {
+		if strings.Contains(l, kw) {
+			return i + 1
+		}
+	}
+	for i, l := range strings.Split(content, "\n") {
+		if strings.Contains(foldForMatch(l), kw) {
+			return i + 1
+		}
+	}
+	return 0
 }
 
 // ── Hidden unicode ────────────────────────────────────────────────────────────
@@ -101,25 +114,44 @@ func ruleHiddenUnicode(content, filePath string) []Finding {
 	var findings []Finding
 	for i, line := range lines {
 		for _, r := range line {
-			for _, table := range hiddenUnicodeRanges {
-				if unicode.Is(table, r) {
-					findings = append(findings, Finding{
-						RuleID:      "prompt-injection/hidden-unicode",
-						Severity:    "CRITICAL",
-						FilePath:    filePath,
-						Line:        i + 1,
-						Message:     "Hidden unicode character detected (possible prompt injection)",
-						Description: "Zero-width or bidi-override unicode characters can hide instructions from human reviewers.",
-						Remediation: "Remove the hidden characters. Use a hex editor or 'cat -A' to inspect.",
-						Confidence:  0.95,
-					})
-					goto nextLine
-				}
+			if isHiddenRune(r) {
+				findings = append(findings, Finding{
+					RuleID:      "prompt-injection/hidden-unicode",
+					Severity:    "CRITICAL",
+					FilePath:    filePath,
+					Line:        i + 1,
+					Message:     "Hidden unicode character detected (possible prompt injection)",
+					Description: "Zero-width, bidi-override, or format unicode characters can hide instructions from human reviewers.",
+					Remediation: "Remove the hidden characters. Use a hex editor or 'cat -A' to inspect.",
+					Confidence:  0.95,
+				})
+				break
 			}
 		}
-	nextLine:
 	}
 	return findings
+}
+
+// isHiddenRune reports characters that smuggle/obscure instructions: the curated ranges plus
+// any Unicode format char and word-joiner / variation-selector blocks.
+func isHiddenRune(r rune) bool {
+	for _, table := range hiddenUnicodeRanges {
+		if unicode.Is(table, r) {
+			return true
+		}
+	}
+	if unicode.Is(unicode.Cf, r) {
+		return true
+	}
+	// Word joiner / invisible operators U+2060–U+2064 (also in Cf, belt-and-suspenders).
+	if r >= 0x2060 && r <= 0x2064 {
+		return true
+	}
+	// Variation selectors U+FE00–U+FE0F.
+	if r >= 0xFE00 && r <= 0xFE0F {
+		return true
+	}
+	return false
 }
 
 // ── MCP host checks ───────────────────────────────────────────────────────────
@@ -137,7 +169,9 @@ type mcpConfig struct {
 	} `json:"mcpServers"`
 }
 
-var tunnelPatterns = regexp.MustCompile(`ngrok\.io|localtunnel\.me|serveo\.net|localhost\.run|trycloudflare\.com`)
+var tunnelPatterns = regexp.MustCompile(
+	`ngrok\.io|ngrok-free\.app|ngrok\.app|localtunnel\.me|loca\.lt|serveo\.net|` +
+		`localhost\.run|trycloudflare\.com|tunnelmole\.com|bore\.pub|pinggy\.io|lhr\.life|devtunnels\.ms`)
 
 func ruleMCPHosts(content, filePath string) []Finding {
 	if !strings.HasSuffix(filePath, ".json") {
@@ -164,7 +198,7 @@ func ruleMCPHosts(content, filePath string) []Finding {
 		sName := sanitizeExcerpt(name)
 		sURL := sanitizeExcerpt(rawURL)
 		sHost := sanitizeExcerpt(host)
-		if u.Scheme == "http" {
+		if strings.ToLower(u.Scheme) == "http" {
 			findings = append(findings, Finding{
 				RuleID:      "mcp-host/non-https",
 				Severity:    "HIGH",
@@ -208,12 +242,17 @@ func ruleMCPHosts(content, filePath string) []Finding {
 // in that schema — they are permissions.allow-only tools (see isHighRiskUnqualified).
 var dangerousTools = []string{"Bash", "Computer", "Shell"}
 
-var wildcardPatterns = regexp.MustCompile(`^\*$|^[A-Za-z]+\(\s*\*`)
+// wildcardPatterns matches only UNRESTRICTED tool grants (no command prefix): a bare `*`,
+// `Tool(*...)` with the wildcard right after the paren, or `Tool(:*)` with an empty prefix.
+// Scoped wildcards like Bash(go test:*) or Bash(curl *) are the user's deliberate scoping and
+// are intentionally NOT flagged (distinguishing dangerous-scoped from benign-scoped is a
+// reputation/intent judgment, not a regex one).
+var wildcardPatterns = regexp.MustCompile(`^\*$|^[A-Za-z]+\(\s*\*|\(\s*:\s*\*`)
 
 func isHighRiskUnqualified(entry string) bool {
-	// Broader than dangerousTools: includes Write/Edit, which are Claude Code
+	// Broader than dangerousTools: includes Write/Edit/WebFetch/Execute, which are Claude Code
 	// permission tokens and risky when unqualified in permissions.allow.
-	for _, t := range []string{"Bash", "Write", "Edit", "Computer", "Shell"} {
+	for _, t := range []string{"Bash", "Write", "Edit", "Computer", "Shell", "WebFetch", "Execute"} {
 		if strings.EqualFold(entry, t) {
 			return true
 		}
@@ -315,29 +354,58 @@ func ruleSupplyChain(content, filePath, root string) []Finding {
 
 var reBase64Blob = regexp.MustCompile(`[A-Za-z0-9+/]{60,}={0,2}`)
 
-func encodedInstructionsSuspect(filePath string) bool {
-	base := strings.ToLower(filepath.Base(filePath))
-	ext := strings.ToLower(filepath.Ext(filePath))
-	return ext == ".md" || base == ".mcp.json"
+// reBase64Line matches a single line that consists entirely of base64 characters
+// (8+ chars, optional padding), used to detect line-wrapped base64 blobs.
+var reBase64Line = regexp.MustCompile(`^[A-Za-z0-9+/]{8,}={0,2}$`)
+
+// isBenignBase64 excludes data: URIs, inline base64 content blocks, and the
+// canonical RFC-7519 example JWT header so that legitimate SVG/image data URIs
+// and well-known JWT examples do not trigger a false positive.
+func isBenignBase64(s string) bool {
+	return strings.Contains(s, "data:") ||
+		strings.Contains(s, "base64,") ||
+		strings.Contains(s, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
 }
 
-func ruleEncodedInstructions(content, filePath string) []Finding {
-	if !encodedInstructionsSuspect(filePath) {
-		return nil
+func base64Finding(filePath string, line int) Finding {
+	return Finding{
+		RuleID:      "prompt-injection/encoded-instructions",
+		Severity:    "CRITICAL",
+		FilePath:    filePath,
+		Line:        line,
+		Message:     "Possible base64-encoded instructions detected",
+		Description: "Base64-encoded content in agent config files is a known vector for hiding prompt injection.",
+		Remediation: "Review and remove the encoded content. If legitimate, document why base64 is needed here.",
+		Confidence:  0.65,
 	}
+}
+
+// ruleEncodedInstructions detects base64-encoded payloads in any scanned file.
+// It checks each line for an inline blob and also joins consecutive base64-ish
+// lines to catch line-wrapped encodings. data: URIs and the RFC-7519 example
+// JWT are excluded to avoid false positives on legitimate content.
+func ruleEncodedInstructions(content, filePath string) []Finding {
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		if reBase64Blob.MatchString(line) {
-			return []Finding{{
-				RuleID:      "prompt-injection/encoded-instructions",
-				Severity:    "CRITICAL",
-				FilePath:    filePath,
-				Line:        i + 1,
-				Message:     "Possible base64-encoded instructions detected",
-				Description: "Base64-encoded content in agent config files is a known vector for hiding prompt injection.",
-				Remediation: "Review and remove the encoded content. If legitimate, document why base64 is needed here.",
-				Confidence:  0.65,
-			}}
+		if reBase64Blob.MatchString(line) && !isBenignBase64(line) {
+			return []Finding{base64Finding(filePath, i+1)}
+		}
+	}
+	// Line-wrapped base64: join consecutive base64-ish lines and test the blob.
+	var run strings.Builder
+	start := 0
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if reBase64Line.MatchString(t) {
+			if run.Len() == 0 {
+				start = i + 1
+			}
+			run.WriteString(t)
+			if reBase64Blob.MatchString(run.String()) && !isBenignBase64(run.String()) {
+				return []Finding{base64Finding(filePath, start)}
+			}
+		} else {
+			run.Reset()
 		}
 	}
 	return nil
@@ -378,8 +446,9 @@ func scanLinePatterns(content, filePath string, patterns []*regexp.Regexp, tmpl 
 	lines := strings.Split(content, "\n")
 	var findings []Finding
 	for i, line := range lines {
+		folded := foldForMatch(line)
 		for _, re := range patterns {
-			if re.MatchString(line) {
+			if re.MatchString(line) || re.MatchString(folded) {
 				f := tmpl
 				f.FilePath = filePath
 				f.Line = i + 1
@@ -488,9 +557,10 @@ var mcpDangerousShells = map[string]bool{
 var mcpDangerousEnvKeys = []string{
 	"LD_PRELOAD", "LD_LIBRARY_PATH", "NODE_OPTIONS", "PYTHONSTARTUP",
 	"BASH_ENV", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH",
+	"GIT_SSH_COMMAND", "PYTHONPATH", "ELECTRON_RUN_AS_NODE", "PERL5OPT", "RUBYOPT", "RUBYLIB",
 }
 
-var mcpTmpPath = regexp.MustCompile(`(?i)^(/tmp/|/var/tmp/|\\[Tt]emp\\|%[Tt][Ee][Mm][Pp]%)`)
+var mcpTmpPath = regexp.MustCompile(`(?i)^(/tmp/|/var/tmp/|/dev/shm/|~?/downloads/|\\[Tt]emp\\|%[Tt][Ee][Mm][Pp]%)`)
 
 func ruleMCPCommands(content, filePath string) []Finding {
 	if !strings.HasSuffix(filePath, ".json") {
@@ -547,6 +617,38 @@ func ruleMCPCommands(content, filePath string) []Finding {
 					Confidence:  0.90,
 				})
 			}
+			// Interpreter + inline-eval (node -e, python -c/-m, deno, ruby/perl -e)
+			evalFlags := map[string][]string{
+				"node": {"-e", "--eval"}, "deno": {"eval"},
+				"python": {"-c", "-m"}, "python3": {"-c", "-m"},
+				"ruby": {"-e"}, "perl": {"-e"},
+			}
+			if flags, ok := evalFlags[base]; ok && hasAnyArg(srv.Args, flags) {
+				findings = append(findings, Finding{
+					RuleID:      "mcp-exec/interpreter-eval",
+					Severity:    "HIGH",
+					FilePath:    filePath,
+					Message:     "MCP server '" + sName + "' runs an interpreter with an inline-eval flag",
+					Description: "An interpreter with -e/-c/-m executes arbitrary code at MCP server startup.",
+					Remediation: "Replace inline code with a committed, reviewed script file at a fixed path.",
+					Confidence:  0.9,
+				})
+			}
+			// `env <shell-or-interpreter> ...` wrapper hides the real command basename.
+			if base == "env" && len(srv.Args) > 0 {
+				inner := strings.ToLower(filepath.Base(srv.Args[0]))
+				if mcpDangerousShells[inner] || evalFlags[inner] != nil {
+					findings = append(findings, Finding{
+						RuleID:      "mcp-exec/env-wrapper",
+						Severity:    "HIGH",
+						FilePath:    filePath,
+						Message:     "MCP server '" + sName + "' uses 'env' to launch a shell/interpreter",
+						Description: "Wrapping a shell or interpreter in 'env' obscures the executed command.",
+						Remediation: "Invoke a specific reviewed binary directly instead of via 'env'.",
+						Confidence:  0.85,
+					})
+				}
+			}
 		}
 
 		for k := range srv.Env {
@@ -568,6 +670,18 @@ func ruleMCPCommands(content, filePath string) []Finding {
 	return findings
 }
 
+// hasAnyArg reports whether any element of args matches any element of want (exact string equality).
+func hasAnyArg(args, want []string) bool {
+	for _, a := range args {
+		for _, w := range want {
+			if a == w {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ── Credential access ─────────────────────────────────────────────────────────
 
 // credentialPathPattern matches known credential file names/paths referenced in
@@ -580,6 +694,51 @@ var credentialPathPattern = regexp.MustCompile(
 		`\.netrc\b|` +
 		`~[/\\]\.ssh[/\\])`)
 
+// credNegation holds folded lead-ins that indicate a line is security guidance
+// (forbidding / warning about credential access) rather than an attack payload.
+// All entries are lowercased and separator-collapsed to match foldForMatch output.
+var credNegation = []string{
+	"never ", "don't ", "do not ", "avoid ", "dont ", "gitignore", "never commit", "never read",
+	"don t ", // folded form of "don't" (apostrophe collapses to space)
+}
+
+// credentialGuidance returns true when the folded form of window contains a
+// negation/guidance lead-in, meaning the immediate clause before the credential
+// path is instructing the agent NOT to access credentials rather than directing
+// it to do so.
+//
+// window must be the text in the IMMEDIATE clause before the credential-path
+// match (i.e. the bounded 30-char prefix after stripping any prior clause via
+// lastClause). The "gitignore" term is handled separately by the caller because
+// it conventionally follows the path ("add .npmrc to .gitignore").
+func credentialGuidance(window string) bool {
+	f := foldForMatch(window)
+	for _, n := range credNegation {
+		if n == "gitignore" {
+			continue // anchored on the whole line by the caller, not the window
+		}
+		if strings.Contains(f, strings.TrimSpace(n)) || strings.Contains(f, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// lastClause returns the portion of s that follows the last clause break
+// (comma, period, or semicolon). If no clause break is present the whole
+// string is returned. This lets credentialGuidance operate on just the
+// immediate clause preceding a credential path, so a negation word in an
+// earlier clause (e.g. "never mind, read .env") is not mistaken for guidance.
+func lastClause(s string) string {
+	for i := len(s) - 1; i >= 0; i-- {
+		switch s[i] {
+		case ',', '.', ';':
+			return s[i+1:]
+		}
+	}
+	return s
+}
+
 func ruleCredentialAccess(content, filePath string) []Finding {
 	if strings.HasSuffix(filePath, ".json") {
 		return nil
@@ -587,7 +746,26 @@ func ruleCredentialAccess(content, filePath string) []Finding {
 	lines := strings.Split(content, "\n")
 	var findings []Finding
 	for i, line := range lines {
-		if credentialPathPattern.MatchString(line) {
+		idx := credentialPathPattern.FindStringIndex(line)
+		if idx == nil {
+			continue
+		}
+		// Bound the negation search to the ~30 characters immediately before the
+		// credential path. This prevents a negation word in an earlier clause
+		// (e.g. "never mind, read .env") from suppressing the finding.
+		winStart := idx[0] - 30
+		if winStart < 0 {
+			winStart = 0
+		}
+		window := line[winStart:idx[0]]
+		// Further restrict to the final clause within the window: a clause break
+		// (comma, period, semicolon) means the negation was in a prior clause and
+		// does not govern the credential path.
+		effectiveWindow := lastClause(window)
+		// gitignore convention places the path BEFORE the word; check the whole
+		// line so "add .npmrc to .gitignore" is still treated as guidance.
+		isGuidance := credentialGuidance(effectiveWindow) || strings.Contains(foldForMatch(line), "gitignore")
+		if !isGuidance {
 			findings = append(findings, Finding{
 				RuleID:      "exfil/credential-access",
 				Severity:    "HIGH",

@@ -107,6 +107,26 @@ go build -o zyrax-guard ./cmd/zyrax-guard
 
 ---
 
+## Updating
+
+Guard checks for a newer release at most once a day (a read-only lookup of its own version
+on `registry.npmjs.org`) and prints a one-line notice on stderr when one is available. To
+update:
+
+```bash
+zyrax-guard upgrade          # detects how Guard was installed and updates it
+zyrax-guard version --check  # force a version check now
+```
+
+`upgrade` delegates to your package manager (`npm`/`brew`/`go`) when Guard was installed that
+way; for `curl|sh` / standalone-binary installs on Linux/macOS it downloads the signed release
+and **verifies its SHA-256 against the signed `checksums.txt`** — and, when `cosign` is installed,
+**verifies the keyless cosign signature** — **before replacing the binary** (a signature
+mismatch aborts the upgrade). Standalone Windows binaries are upgraded manually for now (the notice links to Releases).
+Disable the daily check with `ZYRAX_NO_UPDATE_CHECK=1`.
+
+---
+
 ## Quickstart
 
 ### Audit AI agent configs
@@ -152,7 +172,7 @@ Commit `.zyrax/policy.json` — it is the reviewable allowlist for your project.
 zyrax-guard scan --base /tmp/base-lock.json --head package-lock.json --sarif
 ```
 
-Emits SARIF 2.1.0 to stdout. Exit code 0 if no BLOCK; non-zero otherwise.
+Emits SARIF 2.1.0 to stdout. Exit code 0 if no BLOCK or ERROR; non-zero otherwise.
 Add `--strict` to treat WARN as failure.
 
 ---
@@ -202,6 +222,20 @@ zyrax-guard scan-agents .
 
 Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
 
+**Obfuscation-normalized.** Before matching, detection normalizes common disguises — zero-width and
+format characters, homoglyphs, full-width and leetspeak substitutions, and separator/line splitting —
+so trivially obscured payloads (`y0u 4r3 n0w…`, `ignore—previous—instructions`, Cyrillic look-alikes)
+are still caught. It stays a fast, deterministic, on-device guardrail for **known** agent-config
+attack patterns — not a complete defense against a determined adversary who paraphrases or writes in
+another language. Semantic detection is a roadmap item for the Zyrax platform, not the local CLI.
+
+**Suppressing a legitimate collision.** A real skill or config can legitimately phrase something the
+heuristics flag (e.g. a reviewer skill that says "act as a senior reviewer"). Silence it with an
+inline `zyrax-allow` comment on that line — optionally `zyrax-allow: <rule-prefix>` to scope it — or
+`zyrax-allow-file: <rule-prefix>` for a whole file. Suppression is **never silent**: the scan always
+reports `N finding(s) suppressed by zyrax-allow`, and **`--strict` ignores suppressions entirely**
+(audit/CI mode), so a hostile config can't use the directive as a kill switch.
+
 ### In CI
 
 ```yaml
@@ -229,6 +263,8 @@ Gate every pull request. By default (`scan: both`) Zyrax Guard audits AI agent c
 added in the PR, failing the check if anything is blocked. Add
 `.github/workflows/zyrax-guard.yml`:
 
+> **Pin for production:** these examples pin third-party actions to commit SHAs — mutable tags are a supply-chain risk (the exact risk Guard exists to catch). Pin `zyrax-guard` to an exact version or commit SHA too for fully reproducible CI.
+
 ```yaml
 name: Zyrax Guard
 on: pull_request
@@ -236,7 +272,7 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
         with:
           fetch-depth: 0          # lets Guard diff against the PR base (added deps only)
       - uses: tiagosilva07/zyrax-guard@v0
@@ -262,7 +298,7 @@ Upload results to **GitHub Code Scanning** so findings show up inline on the PR:
         with:
           sarif-file: zyrax-guard.sarif
           fail-on-block: "false"   # let Code Scanning surface findings; don't hard-fail
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard.sarif
 ```
@@ -276,11 +312,11 @@ Audit agent configs **and** dependencies, both surfaced in Code Scanning:
           sarif-file: zyrax-guard-deps.sarif
           agents-sarif-file: zyrax-guard-agents.sarif
           fail-on-block: "false"
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard-deps.sarif
           category: zyrax-guard-deps
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard-agents.sarif
           category: zyrax-guard-agents
@@ -316,6 +352,9 @@ Guard runs against public registry metadata only — no local execution, no inst
 | **Lockfile integrity** | *(scan only)* Resolved URL or integrity hash changed → **BLOCK** |
 | **Maintainer change** | *(scan only)* New version published by a previously unseen maintainer → **WARN** |
 
+Transient registry/OSV failures (429 or 5xx) are retried with backoff (honoring `Retry-After`)
+before Guard gives up; only a persistent failure yields **ERROR** (fail closed — see [Verdicts](#verdicts)).
+
 ---
 
 ## Deep check (`--deep`)
@@ -338,13 +377,16 @@ Zero added dependencies — the extractor uses stdlib `archive/tar` + `compress/
 
 ---
 
-## The three verdicts
+## Verdicts
 
 | Verdict | Meaning | Default exit code |
 |---|---|---|
 | **SAFE** | No signals worth noting | `0` |
 | **WARN** | Suspicious — review before proceeding | `0` (use `--strict` to make it `1`) |
+| **ERROR** | Guard could not verify (registry/OSV unreachable, 5xx, or rate-limited) — **fails closed** | `1` (always) |
 | **BLOCK** | Strong indicator of malicious or hallucinated package | `1` |
+
+Guard fails closed: if it cannot reach the registry or the malware database, it returns ERROR and exits non-zero rather than letting an unverified package through. Disrupting the network cannot silently bypass the gate.
 
 ---
 
@@ -364,6 +406,9 @@ policy file — no config file or environment variables required.
 | `allow <name>` | Add a package to the local allowlist |
 | `init` | Print the shell hook (gate installs transparently) |
 | `mcp` | Run the MCP server (`check_package`, `scan_agents`) |
+| `mcp install [--global]` | Register Guard with your AI agent |
+| `upgrade` | Update Guard to the latest release (verified) |
+| `version [--check]` | Print version; `--check` checks for a newer release |
 
 ### Flags
 
@@ -393,10 +438,10 @@ share policy across a team. (Org-wide policy is a paid drop-in via the `Policy` 
 
 | Context | Exits `1` when |
 |---|---|
-| `check` / `install` / `scan` | a **BLOCK** verdict — or a **WARN** with `--strict` |
+| `check` / `install` / `scan` | a **BLOCK** or **ERROR** verdict — or a **WARN** with `--strict` (ERROR exits 1 regardless of `--strict`) |
 | `scan-agents` | a **CRITICAL** or **HIGH** finding — or **any** finding with `--strict` |
 
-See [The three verdicts](#the-three-verdicts) for package verdict meanings.
+See [Verdicts](#verdicts) for package verdict meanings.
 
 ---
 
@@ -459,6 +504,24 @@ audit the configs it's about to act on — and a `check_package` tool it calls b
 install (AI agents hallucinate package names; attackers pre-register them as malware,
 and Guard breaks that chain).
 
+**One-step register (recommended):**
+
+```bash
+zyrax-guard mcp install            # writes ./.mcp.json for this project
+zyrax-guard mcp install --global   # registers globally with Claude Code (user scope)
+```
+
+`mcp install` writes a standard `.mcp.json` (read by Claude Code, Cursor, and VS Code) and
+auto-detects whether to register `zyrax-guard mcp` (binary on PATH) or `npx -y zyrax-guard mcp`.
+Override with `--command binary|npx`. `--global` delegates to `claude mcp add -s user` (it prints
+the manual command if the `claude` CLI isn't installed).
+
+Manual one-liner (Claude Code):
+
+```bash
+claude mcp add zyrax-guard -- npx -y zyrax-guard mcp
+```
+
 → **[MCP setup for Claude Code, Cursor, Windsurf, VS Code, and Continue.dev](docs/mcp-integrations.md)**
 
 Guard is on the official MCP registry as `io.github.tiagosilva07/zyrax-guard` — register it
@@ -484,6 +547,8 @@ against public registry APIs:
 - `registry.npmjs.org` — existence and metadata
 - `api.npmjs.org` — download counts
 - `api.osv.dev` — known advisories
+- `registry.npmjs.org` — Guard's own latest version (update check, ≤1×/day; disable with `ZYRAX_NO_UPDATE_CHECK=1`)
+- `github.com` — only when you run `zyrax-guard upgrade` (downloads the signed release binary)
 
 No telemetry. No account. No secrets sent anywhere. The binary is reproducible
 (`-trimpath`), and every release ships SLSA L3 provenance so you can verify the build
@@ -514,7 +579,8 @@ and audit/compliance reporting) is in development — learn more at **[zyrax.io]
 | **v0.6.x** | GitHub Action + Marketplace listing + `curl\|sh` installer; floating `@v0` tag | shipped |
 | **v0.7.0** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) + Phase 2 detections (credential access, exfiltration sinks, MCP tool-description injection) | shipped |
 | **v0.8** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | shipped |
-| **exploring** | Community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
+| **v0.9.0** | Update detection (daily opt-out notice + verified `upgrade`) + one-step `mcp install`; **production-readiness**: fail-closed `ERROR` verdict (network failure no longer bypasses the gate), retries/backoff, MCP panic recovery, cosign-verified upgrade, hardened CI (gitleaks/staticcheck/dependency-review); **agent-config detection hardening** (obfuscation-normalized matching, allowlist-style MCP/exec/perms, `zyrax-allow` suppression) | shipped |
+| **exploring** | Semantic detection layer (LLM/heuristic judge for paraphrased/non-English prompt injection) as a Zyrax-platform capability; community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
 `Reporter` seams — no re-architecting required.

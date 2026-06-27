@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/artifact"
@@ -22,6 +23,10 @@ const (
 
 // crates names: alphanumeric, _ and -, must start with a letter, max 64.
 var nameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+
+// safeCrateVersion allows semver-style versions (e.g. "1.0.0", "1.2.3-rc1") and
+// rejects anything that could inject path segments (spaces, slashes, "..").
+var safeCrateVersion = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]*$`)
 
 type Provider struct {
 	http    *httpx.Client
@@ -54,7 +59,7 @@ func (p *Provider) Exists(ctx context.Context, name, _ string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return code == 200, nil
+	return httpx.ExistsFromStatus(code)
 }
 
 type cratesJSON struct {
@@ -103,8 +108,8 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 			version = md.Latest
 		}
 	}
-	if version == "" {
-		return map[string]string{}, nil
+	if version == "" || strings.Contains(version, "..") || !safeCrateVersion.MatchString(version) {
+		return nil, fmt.Errorf("invalid crate version %q", version)
 	}
 	url := p.base + "/api/v1/crates/" + name + "/" + version + "/download"
 	_, b, err := p.http.GetBytes(ctx, url, 32<<20)

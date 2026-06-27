@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"strings"
@@ -135,6 +136,36 @@ func TestToolsCallBlock(t *testing.T) {
 	}
 }
 
+func TestToolsCallError(t *testing.T) {
+	res := verdict.Result{
+		Verdict:    verdict.Error,
+		VerdictStr: "ERROR",
+		Signals: []verdict.Signal{
+			{Check: verdict.RuleCheckError, Level: verdict.LevelError, Message: "registry unreachable"},
+		},
+	}
+	resps := run(t, fakeChecker{res: res},
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"check_package","arguments":{"name":"some-pkg"}}}`,
+	)
+	if len(resps) != 1 {
+		t.Fatalf("want 1 response, got %d", len(resps))
+	}
+	result := resps[0]["result"].(map[string]any)
+	if result["isError"] != false {
+		t.Errorf("an ERROR verdict must NOT be a tool error (isError): %v", result["isError"])
+	}
+	text := result["content"].([]any)[0].(map[string]any)["text"].(string)
+	if strings.Contains(text, "safe to install") {
+		t.Errorf("ERROR verdict must not say 'safe to install'; got: %q", text)
+	}
+	if !strings.Contains(text, "do NOT install") {
+		t.Errorf("ERROR verdict must say 'do NOT install'; got: %q", text)
+	}
+	if !strings.Contains(text, "could not verify") {
+		t.Errorf("ERROR verdict must mention verification failure; got: %q", text)
+	}
+}
+
 func TestToolsCallMissingName(t *testing.T) {
 	resps := run(t, fakeChecker{},
 		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"check_package","arguments":{}}}`,
@@ -143,6 +174,33 @@ func TestToolsCallMissingName(t *testing.T) {
 	if result["isError"] != true {
 		t.Errorf("missing name should be a tool error")
 	}
+}
+
+func TestServeRecoversFromHandlerPanic(t *testing.T) {
+	srv := &Server{Version: "test", Resolve: func(string) (Checker, error) {
+		return panicChecker{}, nil
+	}}
+	// Two requests on one stream: a tools/call that panics, then a tools/list that must still work.
+	in := strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_package","arguments":{"name":"x","ecosystem":"npm"}}}` + "\n" +
+			`{"jsonrpc":"2.0","id":2,"method":"tools/list"}` + "\n")
+	var out bytes.Buffer
+	if err := srv.Serve(in, &out); err != nil {
+		t.Fatalf("Serve returned error: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "-32603") {
+		t.Fatalf("expected -32603 internal error for the panicking request, got: %s", got)
+	}
+	if !strings.Contains(got, `"id":2`) {
+		t.Fatalf("server must keep serving after a panic; missing response to id 2: %s", got)
+	}
+}
+
+type panicChecker struct{}
+
+func (panicChecker) CheckWith(ctx context.Context, name, version string, deep bool) verdict.Result {
+	panic("boom")
 }
 
 func TestToolsCallDeep(t *testing.T) {

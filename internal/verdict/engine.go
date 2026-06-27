@@ -20,6 +20,11 @@ func Decide(ecosystem, name, version string, signals []Signal) Result {
 				v = Warn
 			}
 			score += 10
+		case LevelError:
+			if v < Error {
+				v = Error
+			}
+			score += 50
 		default:
 			score++
 		}

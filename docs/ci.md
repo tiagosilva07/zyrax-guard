@@ -4,6 +4,8 @@ The fastest way to gate a repo is the [GitHub Action](../README.md#github-action
 recipes below show the underlying `zyrax-guard scan` invocations for a PR gate across
 ecosystems — useful for non-GitHub CI or custom pipelines.
 
+> **Pin for production:** these examples pin third-party actions to commit SHAs — mutable tags are a supply-chain risk (the exact risk Guard exists to catch). Pin `zyrax-guard` to an exact version or commit SHA too for fully reproducible CI.
+
 ## GitHub Actions (PR gate)
 
 ```yaml
@@ -14,9 +16,9 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
         with: { fetch-depth: 0 }
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # pin: actions/setup-go@v6
         with: { go-version: "1.26" }
       - run: go install github.com/tiagosilva07/zyrax-guard/cmd/zyrax-guard@latest
       - name: Guard new dependencies
@@ -27,7 +29,7 @@ jobs:
             --head package-lock.json \
             --strict \
             --sarif > guard.sarif
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         if: always()
         with: { sarif_file: guard.sarif }
 ```

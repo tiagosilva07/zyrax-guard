@@ -107,7 +107,9 @@ func (s *Server) callScanAgents(raw json.RawMessage) map[string]any {
 	if !fi.IsDir() {
 		return toolError("dir is not a directory: " + absDir)
 	}
-	findings, files, err := agentsec.ScanDir(absDir)
+	// An agent auditing untrusted configs must NOT honor in-file zyrax-allow
+	// suppression — it must see everything. Pass ignoreAllow = true.
+	findings, files, _, err := agentsec.ScanDir(absDir, true)
 	if err != nil {
 		return toolError("scan-agents: " + err.Error())
 	}
@@ -159,6 +161,8 @@ func renderForAgent(r verdict.Result) string {
 	switch r.Verdict {
 	case verdict.Block:
 		b.WriteString("\n\nRECOMMENDATION: do NOT install this package.")
+	case verdict.Error:
+		b.WriteString("\n\nRECOMMENDATION: do NOT install — Guard could not verify this package (registry or malware database unreachable). Try again or investigate before installing.")
 	case verdict.Warn:
 		b.WriteString("\n\nRECOMMENDATION: review carefully before installing.")
 	default:
