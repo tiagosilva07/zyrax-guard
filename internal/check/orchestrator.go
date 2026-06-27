@@ -38,7 +38,7 @@ func (o *Orchestrator) CheckWith(ctx context.Context, name, version string, deep
 	exists, err := o.Eco.Exists(ctx, name, version)
 	if err != nil {
 		return verdict.Decide(o.Eco.Name(), name, version, []verdict.Signal{
-			{Check: verdict.RuleCheckError, Level: verdict.LevelWarn, Message: "could not reach the registry to verify this package: " + err.Error()},
+			{Check: verdict.RuleCheckError, Level: verdict.LevelError, Message: "could not reach the registry to verify this package: " + err.Error()},
 		})
 	}
 	signals = append(signals, Existence(exists))
@@ -51,8 +51,14 @@ func (o *Orchestrator) CheckWith(ctx context.Context, name, version string, deep
 	}
 	signals = append(signals, Typosquat(name, md.WeeklyLoads, o.Eco.PopularList()))
 	signals = append(signals, Popularity(md))
-	if advs, err := o.Intel.Lookup(ctx, o.Eco.Name(), name, version); err == nil {
-		signals = append(signals, KnownBad(advs))
+	advs, lookupErr := o.Intel.Lookup(ctx, o.Eco.Name(), name, version)
+	if len(advs) > 0 {
+		signals = append(signals, KnownBad(advs)) // denylist/OSV hits (BLOCK dominates ERROR)
+	}
+	if lookupErr != nil {
+		signals = append(signals, verdict.Signal{Check: verdict.RuleCheckError, Level: verdict.LevelError, Message: "could not verify against the malware database: " + lookupErr.Error()})
+	} else if len(advs) == 0 {
+		signals = append(signals, KnownBad(advs)) // explicit "no known advisories" info when OSV succeeded clean
 	}
 	if deep {
 		if files, err := o.Eco.InstallCode(ctx, name, version); err != nil {
