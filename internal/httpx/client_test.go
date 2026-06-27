@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestGetJSON_AllowedHost(t *testing.T) {
@@ -92,6 +94,84 @@ func TestGetBytes_OverCap(t *testing.T) {
 	_, _, err := c.GetBytes(context.Background(), srv.URL, 1024)
 	if err == nil {
 		t.Fatal("over-cap body must error")
+	}
+}
+
+func TestRetriesTransient5xxThenSucceeds(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&hits, 1) < 3 {
+			w.WriteHeader(503)
+			return
+		}
+		w.Write([]byte(`{"ok":true}`))
+	}))
+	defer srv.Close()
+	c := New([]string{srv.Listener.Addr().String()})
+	c.retryBase = time.Millisecond // keep the test fast
+
+	var out struct{ Ok bool }
+	code, err := c.GetJSON(context.Background(), "http://"+srv.Listener.Addr().String()+"/x", &out)
+	if err != nil || code != 200 || !out.Ok {
+		t.Fatalf("expected success after retries, got code=%d err=%v out=%+v", code, err, out)
+	}
+	if atomic.LoadInt32(&hits) != 3 {
+		t.Fatalf("expected 3 attempts (2 retries), got %d", hits)
+	}
+}
+
+func TestPersistent5xxExhaustsRetries(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(503)
+	}))
+	defer srv.Close()
+	c := New([]string{srv.Listener.Addr().String()})
+	c.retryBase = time.Millisecond
+
+	code, err := c.GetJSON(context.Background(), "http://"+srv.Listener.Addr().String()+"/x", nil)
+	if err != nil {
+		t.Fatalf("non-2xx must not be a transport error, got %v", err)
+	}
+	if code != 503 {
+		t.Fatalf("expected final 503, got %d", code)
+	}
+	if atomic.LoadInt32(&hits) != int32(c.maxAttempts) {
+		t.Fatalf("expected %d attempts, got %d", c.maxAttempts, hits)
+	}
+}
+
+func TestNoRetryOn404(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(404)
+	}))
+	defer srv.Close()
+	c := New([]string{srv.Listener.Addr().String()})
+	c.retryBase = time.Millisecond
+	code, _ := c.GetJSON(context.Background(), "http://"+srv.Listener.Addr().String()+"/x", nil)
+	if code != 404 || atomic.LoadInt32(&hits) != 1 {
+		t.Fatalf("404 must not retry: code=%d hits=%d", code, hits)
+	}
+}
+
+func TestRetryAfterHonoredAndCapped(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&hits, 1) == 1 {
+			w.Header().Set("Retry-After", "0") // 0s → immediate retry, deterministic
+			w.WriteHeader(429)
+			return
+		}
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+	c := New([]string{srv.Listener.Addr().String()})
+	code, err := c.GetJSON(context.Background(), "http://"+srv.Listener.Addr().String()+"/x", nil)
+	if err != nil || code != 200 || atomic.LoadInt32(&hits) != 2 {
+		t.Fatalf("429+Retry-After should retry to success: code=%d err=%v hits=%d", code, err, hits)
 	}
 }
 
