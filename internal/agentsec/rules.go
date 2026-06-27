@@ -242,7 +242,12 @@ func ruleMCPHosts(content, filePath string) []Finding {
 // in that schema — they are permissions.allow-only tools (see isHighRiskUnqualified).
 var dangerousTools = []string{"Bash", "Computer", "Shell"}
 
-var wildcardPatterns = regexp.MustCompile(`^\*$|^[A-Za-z]+\(\s*\*|\*\s*\)$|\([^)]*\*[^)]*\)`)
+// wildcardPatterns matches only UNRESTRICTED tool grants (no command prefix): a bare `*`,
+// `Tool(*...)` with the wildcard right after the paren, or `Tool(:*)` with an empty prefix.
+// Scoped wildcards like Bash(go test:*) or Bash(curl *) are the user's deliberate scoping and
+// are intentionally NOT flagged (distinguishing dangerous-scoped from benign-scoped is a
+// reputation/intent judgment, not a regex one).
+var wildcardPatterns = regexp.MustCompile(`^\*$|^[A-Za-z]+\(\s*\*|\(\s*:\s*\*`)
 
 func isHighRiskUnqualified(entry string) bool {
 	// Broader than dangerousTools: includes Write/Edit/WebFetch/Execute, which are Claude Code
