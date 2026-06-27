@@ -9,6 +9,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,8 +19,10 @@ import (
 	"github.com/tiagosilva07/zyrax-guard/internal/data"
 	"github.com/tiagosilva07/zyrax-guard/internal/hook"
 	"github.com/tiagosilva07/zyrax-guard/internal/mcp"
+	"github.com/tiagosilva07/zyrax-guard/internal/mcpinstall"
 	"github.com/tiagosilva07/zyrax-guard/internal/report"
 	"github.com/tiagosilva07/zyrax-guard/internal/seam"
+	"github.com/tiagosilva07/zyrax-guard/internal/selfupdate"
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
 )
 
@@ -34,7 +38,10 @@ usage:
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
+  zyrax-guard mcp install [--global] [--command binary|npx]  (register Guard with your agent)
   zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
+  zyrax-guard upgrade                                       (update Guard to the latest release)
+  zyrax-guard version [--check]
   zyrax-guard --version
 `
 }
@@ -46,10 +53,15 @@ func run(args []string) int {
 		fmt.Print(usage())
 		return 2
 	}
+	code := dispatch(args)
+	maybeNotify(args[0], args[1:])
+	return code
+}
+
+func dispatch(args []string) int {
 	switch args[0] {
 	case "--version", "version":
-		fmt.Println(version)
-		return 0
+		return cmdVersion(args[1:])
 	case "--help", "-h", "help":
 		fmt.Print(usage())
 		return 0
@@ -67,10 +79,97 @@ func run(args []string) int {
 		return cmdMCP(args[1:])
 	case "init":
 		return cmdInit(args[1:])
+	case "upgrade":
+		return cmdUpgrade(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n%s", args[0], usage())
 		return 2
 	}
+}
+
+// cmdVersion prints the version. With --check it forces an update check (ignoring the
+// daily gate) and prints whether a newer release exists.
+func cmdVersion(args []string) int {
+	check := false
+	for _, a := range args {
+		if a == "--check" || a == "-check" {
+			check = true
+		}
+	}
+	fmt.Println(version)
+	if check {
+		selfupdate.CheckAndNotify(os.Stderr, version, selfupdate.Options{Force: true})
+		if version != "dev" {
+			fmt.Fprintln(os.Stderr, "(checked against registry.npmjs.org)")
+		}
+	}
+	return 0
+}
+
+// quietOutput reports whether the args request machine-readable output, so the update
+// notice stays off stdout for --json/--sarif runs.
+func quietOutput(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "--json", "-json", "--sarif", "-sarif":
+			return true
+		}
+	}
+	return false
+}
+
+// maybeNotify prints the daily update notice after a normal command, except for the
+// commands that manage their own output (mcp/init/version/help).
+func maybeNotify(cmd string, args []string) {
+	switch cmd {
+	case "mcp", "init", "version", "--version", "help", "--help", "-h", "upgrade":
+		return
+	}
+	selfupdate.CheckAndNotify(os.Stderr, version, selfupdate.Options{Quiet: quietOutput(args)})
+}
+
+func cmdUpgrade(args []string) int {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	method := fs.String("method", "", "override install-method detection: npm|brew|go|binary")
+	if err := fs.Parse(reorderFlagsFirst(args, "method")); err != nil {
+		return 2
+	}
+	m := selfupdate.Method(*method)
+	if *method != "" {
+		switch m {
+		case selfupdate.MethodNPM, selfupdate.MethodBrew, selfupdate.MethodGo, selfupdate.MethodBinary:
+		default:
+			fmt.Fprintf(os.Stderr, "invalid --method %q (want npm|brew|go|binary)\n", *method)
+			return 2
+		}
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "upgrade: cannot resolve own path:", err)
+		return 1
+	}
+	if p, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = p
+	}
+	if m == "" {
+		gobin := os.Getenv("GOBIN")
+		if gobin == "" {
+			if home, err := os.UserHomeDir(); err == nil {
+				gobin = filepath.Join(home, "go", "bin")
+			}
+		}
+		m = selfupdate.DetectInstall(exe, gobin)
+	}
+	err = selfupdate.Upgrade(os.Stdout, selfupdate.UpgradeOptions{
+		Current:  version,
+		Method:   m,
+		ExecPath: exe,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "upgrade:", err)
+		return 1
+	}
+	return 0
 }
 
 // reorderFlagsFirst moves leading-dash tokens ahead of operands so flags may
@@ -332,10 +431,17 @@ func scanExit(verdicts []string, strict bool) int {
 }
 
 func cmdMCP(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: zyrax-guard mcp   (no flags; serves MCP over stdio)")
-		return 2
+	if len(args) == 0 {
+		return mcpServe()
 	}
+	if args[0] == "install" {
+		return cmdMCPInstall(args[1:])
+	}
+	fmt.Fprintln(os.Stderr, "usage: zyrax-guard mcp [install]   (no args: serve over stdio)")
+	return 2
+}
+
+func mcpServe() int {
 	srv := &mcp.Server{Version: version, Resolve: func(eco string) (mcp.Checker, error) {
 		return check.New(eco, ".")
 	}}
@@ -343,6 +449,61 @@ func cmdMCP(args []string) int {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		return 1
 	}
+	return 0
+}
+
+func cmdMCPInstall(args []string) int {
+	fs := flag.NewFlagSet("mcp install", flag.ContinueOnError)
+	global := fs.Bool("global", false, "register globally via the client CLI (Claude Code)")
+	command := fs.String("command", "", "override registered command: binary|npx")
+	client := fs.String("client", "claude", "global client (only 'claude' supported)")
+	if err := fs.Parse(reorderFlagsFirst(args, "command", "client")); err != nil {
+		return 2
+	}
+	if *command != "" && *command != "binary" && *command != "npx" {
+		fmt.Fprintf(os.Stderr, "invalid --command %q (want binary|npx)\n", *command)
+		return 2
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		if p, e := filepath.EvalSymlinks(exe); e == nil {
+			exe = p
+		}
+	}
+	cmd := mcpinstall.ResolveCommand(*command, exe)
+
+	if *global {
+		return mcpInstallGlobal(*client, cmd)
+	}
+	path := ".mcp.json"
+	if err := mcpinstall.WriteProjectConfig(path, cmd); err != nil {
+		fmt.Fprintln(os.Stderr, "mcp install:", err)
+		return 1
+	}
+	fmt.Printf("Registered zyrax-guard in %s (command: %s).\nRestart your agent to pick it up.\n",
+		path, strings.Join(cmd, " "))
+	return 0
+}
+
+func mcpInstallGlobal(client string, cmd []string) int {
+	if client != "claude" {
+		fmt.Fprintf(os.Stderr, "--global only supports --client claude for now\n")
+		return 2
+	}
+	addArgs := append([]string{"mcp", "add", "-s", "user", "zyrax-guard", "--"}, cmd...)
+	if _, err := exec.LookPath("claude"); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"the 'claude' CLI was not found on PATH.\nRun this manually:\n  claude %s\n",
+			strings.Join(addArgs, " "))
+		return 1
+	}
+	c := exec.Command("claude", addArgs...)
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "mcp install --global:", err)
+		return 1
+	}
+	fmt.Println("Registered zyrax-guard globally with Claude Code (user scope).")
 	return 0
 }
 
