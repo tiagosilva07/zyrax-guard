@@ -29,31 +29,47 @@ var agentConfigNames = map[string]bool{
 
 // ScanDir scans root for agent config files and returns all findings above
 // the minimum confidence threshold.
-func ScanDir(root string) ([]Finding, []string, error) {
-	files, err := discoverAgentFiles(root)
-	if err != nil {
-		return nil, nil, err
+//
+// Inline `zyrax-allow` / `zyrax-allow-file` suppression directives live INSIDE
+// the scanned files, which are untrusted in the audit threat model. When
+// ignoreAllow is true (strict/audit/CI mode) the filter is skipped entirely so
+// in-file directives cannot hide anything; suppressed stays 0. When false, the
+// filter is applied per file and the number of dropped findings is returned in
+// suppressed so callers can always surface that suppression occurred.
+func ScanDir(root string, ignoreAllow bool) (findings []Finding, scanned []string, suppressed int, err error) {
+	files, derr := discoverAgentFiles(root)
+	if derr != nil {
+		return nil, nil, 0, derr
 	}
 	var all []Finding
 	rel := make([]string, len(files))
 	for i, f := range files {
 		rel[i], _ = filepath.Rel(root, f)
-		fi, err := os.Stat(f)
-		if err != nil || fi.Size() > maxFileSizeBytes {
+		fi, statErr := os.Stat(f)
+		if statErr != nil || fi.Size() > maxFileSizeBytes {
 			continue
 		}
-		content, err := os.ReadFile(f)
-		if err != nil {
+		content, readErr := os.ReadFile(f)
+		if readErr != nil {
 			continue
 		}
+		var fileFindings []Finding
 		for _, finding := range evaluateFile(root, rel[i], string(content)) {
 			if finding.Confidence >= minConfidence {
-				all = append(all, finding)
+				fileFindings = append(fileFindings, finding)
 			}
 		}
+		if !ignoreAllow {
+			n := len(fileFindings)
+			fileFindings = applyAllowDirectives(string(content), fileFindings)
+			suppressed += n - len(fileFindings)
+		}
+		all = append(all, fileFindings...)
 	}
+	// Symlink findings are whole-file structural and have no per-file directive
+	// context, so they are never suppressed.
 	all = append(all, findSymlinkedConfigs(root)...)
-	return all, rel, nil
+	return all, rel, suppressed, nil
 }
 
 // SeverityOrder lists severities from most to least critical.
@@ -202,4 +218,83 @@ func evaluateFile(root, relPath, content string) []Finding {
 	findings = append(findings, ruleHooks(content, relPath)...)
 	findings = append(findings, ruleSupplyChain(content, relPath, root)...)
 	return findings
+}
+
+// applyAllowDirectives drops findings suppressed by an inline `zyrax-allow[: prefix]`
+// on the finding's line, or a file-level `zyrax-allow-file[: prefix]` anywhere in the
+// file. A bare directive suppresses any rule; with ": prefix" it suppresses only rules
+// whose RuleID begins with that prefix.
+// Findings with Line == 0 (whole-file findings) are only suppressible by file directives.
+func applyAllowDirectives(content string, findings []Finding) []Finding {
+	lines := strings.Split(content, "\n")
+	fileDirectives := collectAllowPrefixes(content, "zyrax-allow-file")
+	kept := findings[:0]
+	for _, f := range findings {
+		if suppressed(fileDirectives, f.RuleID) {
+			continue
+		}
+		if f.Line >= 1 && f.Line <= len(lines) {
+			lineDirectives := collectAllowPrefixes(lines[f.Line-1], "zyrax-allow")
+			if suppressed(lineDirectives, f.RuleID) {
+				continue
+			}
+		}
+		kept = append(kept, f)
+	}
+	return kept
+}
+
+// collectAllowPrefixes finds every occurrence of directive in s and returns the
+// rule-prefix arguments that follow each one. A bare occurrence yields "" (matches
+// any rule). An occurrence followed by ": prefix" yields "prefix".
+// When directive == "zyrax-allow", occurrences of "zyrax-allow-file" are skipped so
+// that a file-scope directive is never misread as a line-scope one.
+func collectAllowPrefixes(s, directive string) []string {
+	var out []string
+	search := s
+	for {
+		idx := strings.Index(search, directive)
+		if idx < 0 {
+			break
+		}
+		rest := search[idx+len(directive):]
+
+		// Guard: when scanning for the line-scoped "zyrax-allow" directive, skip any
+		// occurrence that is actually "zyrax-allow-file".
+		if directive == "zyrax-allow" && strings.HasPrefix(rest, "-file") {
+			search = rest
+			continue
+		}
+
+		// Skip leading spaces/tabs (newline terminates the directive).
+		rest = strings.TrimLeft(rest, " \t")
+		if strings.HasPrefix(rest, ":") {
+			// "directive: prefix" — extract the first whitespace-delimited token.
+			tail := strings.TrimLeft(rest[1:], " \t")
+			end := strings.IndexAny(tail, " \t\n\r")
+			var arg string
+			if end < 0 {
+				arg = strings.TrimRight(tail, "\r\n")
+			} else {
+				arg = tail[:end]
+			}
+			out = append(out, arg)
+		} else {
+			// Bare directive — suppresses any rule.
+			out = append(out, "")
+		}
+		search = rest
+	}
+	return out
+}
+
+// suppressed reports whether ruleID is covered by any of the collected prefixes.
+// An empty prefix matches any rule ID.
+func suppressed(prefixes []string, ruleID string) bool {
+	for _, p := range prefixes {
+		if p == "" || strings.HasPrefix(ruleID, p) {
+			return true
+		}
+	}
+	return false
 }
