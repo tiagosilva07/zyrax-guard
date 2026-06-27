@@ -222,6 +222,20 @@ zyrax-guard scan-agents .
 
 Exit code: `1` if any CRITICAL or HIGH finding; `0` otherwise. Use `--strict` for exit `1` on any finding.
 
+**Obfuscation-normalized.** Before matching, detection normalizes common disguises — zero-width and
+format characters, homoglyphs, full-width and leetspeak substitutions, and separator/line splitting —
+so trivially obscured payloads (`y0u 4r3 n0w…`, `ignore—previous—instructions`, Cyrillic look-alikes)
+are still caught. It stays a fast, deterministic, on-device guardrail for **known** agent-config
+attack patterns — not a complete defense against a determined adversary who paraphrases or writes in
+another language. Semantic detection is a roadmap item for the Zyrax platform, not the local CLI.
+
+**Suppressing a legitimate collision.** A real skill or config can legitimately phrase something the
+heuristics flag (e.g. a reviewer skill that says "act as a senior reviewer"). Silence it with an
+inline `zyrax-allow` comment on that line — optionally `zyrax-allow: <rule-prefix>` to scope it — or
+`zyrax-allow-file: <rule-prefix>` for a whole file. Suppression is **never silent**: the scan always
+reports `N finding(s) suppressed by zyrax-allow`, and **`--strict` ignores suppressions entirely**
+(audit/CI mode), so a hostile config can't use the directive as a kill switch.
+
 ### In CI
 
 ```yaml
