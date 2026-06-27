@@ -106,6 +106,15 @@ func TestExistsDistinguishesAbsentFromUndetermined(t *testing.T) {
 	}
 }
 
+func TestCratesInstallCodeRejectsBadVersion(t *testing.T) {
+	p := New(httpx.New(nil), nil)
+	for _, bad := range []string{"../../evil", "1.0.0/../x", "a b", "..", ""} {
+		if _, err := p.InstallCode(context.Background(), "serde", bad); err == nil {
+			t.Errorf("crates InstallCode must reject version %q", bad)
+		}
+	}
+}
+
 func crTarGz(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
