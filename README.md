@@ -579,8 +579,8 @@ and audit/compliance reporting) is in development — learn more at **[zyrax.io]
 | **v0.6.x** | GitHub Action + Marketplace listing + `curl\|sh` installer; floating `@v0` tag | shipped |
 | **v0.7.0** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) + Phase 2 detections (credential access, exfiltration sinks, MCP tool-description injection) | shipped |
 | **v0.8** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | shipped |
-| **v0.9.0** | Update detection (daily opt-out notice + verified `upgrade`) + one-step `mcp install` (`.mcp.json` merge / `--global`) | shipped |
-| **exploring** | Community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
+| **v0.9.0** | Update detection (daily opt-out notice + verified `upgrade`) + one-step `mcp install`; **production-readiness**: fail-closed `ERROR` verdict (network failure no longer bypasses the gate), retries/backoff, MCP panic recovery, cosign-verified upgrade, hardened CI (gitleaks/staticcheck/dependency-review); **agent-config detection hardening** (obfuscation-normalized matching, allowlist-style MCP/exec/perms, `zyrax-allow` suppression) | shipped |
+| **exploring** | Semantic detection layer (LLM/heuristic judge for paraphrased/non-English prompt injection) as a Zyrax-platform capability; community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
 `Reporter` seams — no re-architecting required.
