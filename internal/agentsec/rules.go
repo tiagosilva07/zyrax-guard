@@ -242,12 +242,12 @@ func ruleMCPHosts(content, filePath string) []Finding {
 // in that schema — they are permissions.allow-only tools (see isHighRiskUnqualified).
 var dangerousTools = []string{"Bash", "Computer", "Shell"}
 
-var wildcardPatterns = regexp.MustCompile(`^\*$|^[A-Za-z]+\(\s*\*`)
+var wildcardPatterns = regexp.MustCompile(`^\*$|^[A-Za-z]+\(\s*\*|\*\s*\)$|\([^)]*\*[^)]*\)`)
 
 func isHighRiskUnqualified(entry string) bool {
-	// Broader than dangerousTools: includes Write/Edit, which are Claude Code
+	// Broader than dangerousTools: includes Write/Edit/WebFetch/Execute, which are Claude Code
 	// permission tokens and risky when unqualified in permissions.allow.
-	for _, t := range []string{"Bash", "Write", "Edit", "Computer", "Shell"} {
+	for _, t := range []string{"Bash", "Write", "Edit", "Computer", "Shell", "WebFetch", "Execute"} {
 		if strings.EqualFold(entry, t) {
 			return true
 		}
@@ -349,29 +349,58 @@ func ruleSupplyChain(content, filePath, root string) []Finding {
 
 var reBase64Blob = regexp.MustCompile(`[A-Za-z0-9+/]{60,}={0,2}`)
 
-func encodedInstructionsSuspect(filePath string) bool {
-	base := strings.ToLower(filepath.Base(filePath))
-	ext := strings.ToLower(filepath.Ext(filePath))
-	return ext == ".md" || base == ".mcp.json"
+// reBase64Line matches a single line that consists entirely of base64 characters
+// (8+ chars, optional padding), used to detect line-wrapped base64 blobs.
+var reBase64Line = regexp.MustCompile(`^[A-Za-z0-9+/]{8,}={0,2}$`)
+
+// isBenignBase64 excludes data: URIs, inline base64 content blocks, and the
+// canonical RFC-7519 example JWT header so that legitimate SVG/image data URIs
+// and well-known JWT examples do not trigger a false positive.
+func isBenignBase64(s string) bool {
+	return strings.Contains(s, "data:") ||
+		strings.Contains(s, "base64,") ||
+		strings.Contains(s, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9")
 }
 
-func ruleEncodedInstructions(content, filePath string) []Finding {
-	if !encodedInstructionsSuspect(filePath) {
-		return nil
+func base64Finding(filePath string, line int) Finding {
+	return Finding{
+		RuleID:      "prompt-injection/encoded-instructions",
+		Severity:    "CRITICAL",
+		FilePath:    filePath,
+		Line:        line,
+		Message:     "Possible base64-encoded instructions detected",
+		Description: "Base64-encoded content in agent config files is a known vector for hiding prompt injection.",
+		Remediation: "Review and remove the encoded content. If legitimate, document why base64 is needed here.",
+		Confidence:  0.65,
 	}
+}
+
+// ruleEncodedInstructions detects base64-encoded payloads in any scanned file.
+// It checks each line for an inline blob and also joins consecutive base64-ish
+// lines to catch line-wrapped encodings. data: URIs and the RFC-7519 example
+// JWT are excluded to avoid false positives on legitimate content.
+func ruleEncodedInstructions(content, filePath string) []Finding {
 	lines := strings.Split(content, "\n")
 	for i, line := range lines {
-		if reBase64Blob.MatchString(line) {
-			return []Finding{{
-				RuleID:      "prompt-injection/encoded-instructions",
-				Severity:    "CRITICAL",
-				FilePath:    filePath,
-				Line:        i + 1,
-				Message:     "Possible base64-encoded instructions detected",
-				Description: "Base64-encoded content in agent config files is a known vector for hiding prompt injection.",
-				Remediation: "Review and remove the encoded content. If legitimate, document why base64 is needed here.",
-				Confidence:  0.65,
-			}}
+		if reBase64Blob.MatchString(line) && !isBenignBase64(line) {
+			return []Finding{base64Finding(filePath, i+1)}
+		}
+	}
+	// Line-wrapped base64: join consecutive base64-ish lines and test the blob.
+	var run strings.Builder
+	start := 0
+	for i, line := range lines {
+		t := strings.TrimSpace(line)
+		if reBase64Line.MatchString(t) {
+			if run.Len() == 0 {
+				start = i + 1
+			}
+			run.WriteString(t)
+			if reBase64Blob.MatchString(run.String()) && !isBenignBase64(run.String()) {
+				return []Finding{base64Finding(filePath, start)}
+			}
+		} else {
+			run.Reset()
 		}
 	}
 	return nil
