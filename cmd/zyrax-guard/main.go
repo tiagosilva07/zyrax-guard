@@ -220,7 +220,7 @@ func term() bool { fi, _ := os.Stdout.Stat(); return fi != nil && (fi.Mode()&os.
 
 func exitForVerdict(v string, strict bool) int {
 	switch v {
-	case "BLOCK":
+	case "BLOCK", "ERROR":
 		return 1
 	case "WARN":
 		if strict {

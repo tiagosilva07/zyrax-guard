@@ -18,6 +18,8 @@ func (t *Text) Report(results []verdict.Result) error {
 		switch r.Verdict {
 		case verdict.Block:
 			mark, col = "✗", "\x1b[31m" // red
+		case verdict.Error:
+			mark, col = "⚠", "\x1b[35m" // magenta — could not verify
 		case verdict.Warn:
 			mark, col = "!", "\x1b[33m" // amber
 		}

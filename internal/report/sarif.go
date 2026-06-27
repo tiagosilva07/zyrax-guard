@@ -16,6 +16,8 @@ func levelString(l verdict.Level) string {
 	switch l {
 	case verdict.LevelBlock:
 		return "error"
+	case verdict.LevelError:
+		return "error"
 	case verdict.LevelWarn:
 		return "warning"
 	default:
