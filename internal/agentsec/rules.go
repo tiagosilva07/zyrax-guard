@@ -694,6 +694,27 @@ var credentialPathPattern = regexp.MustCompile(
 		`\.netrc\b|` +
 		`~[/\\]\.ssh[/\\])`)
 
+// credNegation holds folded lead-ins that indicate a line is security guidance
+// (forbidding / warning about credential access) rather than an attack payload.
+// All entries are lowercased and separator-collapsed to match foldForMatch output.
+var credNegation = []string{
+	"never ", "don't ", "do not ", "avoid ", "dont ", "gitignore", "never commit", "never read",
+	"don t ", // folded form of "don't" (apostrophe collapses to space)
+}
+
+// credentialGuidance returns true when the folded form of line contains a
+// negation/guidance lead-in, meaning the line is instructing the agent NOT
+// to access credentials rather than instructing it to do so.
+func credentialGuidance(line string) bool {
+	f := foldForMatch(line)
+	for _, n := range credNegation {
+		if strings.Contains(f, strings.TrimSpace(n)) || strings.Contains(f, n) {
+			return true
+		}
+	}
+	return false
+}
+
 func ruleCredentialAccess(content, filePath string) []Finding {
 	if strings.HasSuffix(filePath, ".json") {
 		return nil
@@ -701,7 +722,7 @@ func ruleCredentialAccess(content, filePath string) []Finding {
 	lines := strings.Split(content, "\n")
 	var findings []Finding
 	for i, line := range lines {
-		if credentialPathPattern.MatchString(line) {
+		if credentialPathPattern.MatchString(line) && !credentialGuidance(line) {
 			findings = append(findings, Finding{
 				RuleID:      "exfil/credential-access",
 				Severity:    "HIGH",
