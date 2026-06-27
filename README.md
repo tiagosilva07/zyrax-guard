@@ -119,10 +119,10 @@ zyrax-guard version --check  # force a version check now
 ```
 
 `upgrade` delegates to your package manager (`npm`/`brew`/`go`) when Guard was installed that
-way; for `curl|sh` / standalone-binary installs on Linux/macOS it downloads the signed release,
-**verifies its SHA-256 against the signed `checksums.txt` before replacing the binary** (and the
-cosign signature when `cosign` is available). Standalone Windows binaries are upgraded manually
-for now (the notice links to Releases). Disable the daily check with `ZYRAX_NO_UPDATE_CHECK=1`.
+way; for `curl|sh` / standalone-binary installs on Linux/macOS it downloads the signed release
+and **verifies its SHA-256 against the signed `checksums.txt` before replacing the binary**.
+Standalone Windows binaries are upgraded manually for now (the notice links to Releases).
+Disable the daily check with `ZYRAX_NO_UPDATE_CHECK=1`.
 
 ---
 
