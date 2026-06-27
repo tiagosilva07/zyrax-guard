@@ -66,3 +66,85 @@ pinned to a release with per-platform SHA-256 from `checksums.txt`.
 The npm package version, all `zyrax-guard-*` platform-package versions, and both `server.json` versions must
 equal the release version. `build-npm.mjs` and the workflow handle this automatically; for a
 manual publish, keep them in sync.
+
+## Rolling back a bad release
+
+Follow these steps in order. Each step notes which credential is required.
+
+### 1. Quarantine the GitHub release *(repo write)*
+
+Option A — mark as pre-release (softest, preserves the tag):
+- Go to the release on GitHub → Edit → check **Set as a pre-release** → Update release.
+- This removes the release from the "Latest" banner and from the installer script's auto-detection.
+
+Option B — delete the tag entirely (harder stop):
+```bash
+git push origin :refs/tags/vX.Y.Z          # delete remote tag
+git tag -d vX.Y.Z                          # delete local tag (if present)
+```
+
+### 2. Pull the npm publish *(npm token with publish rights)*
+
+Within npm's 72-hour unpublish window:
+```bash
+npm unpublish zyrax-guard@X.Y.Z --force
+npm unpublish @tiagosilva07/zyrax-guard-linux-amd64@X.Y.Z --force
+npm unpublish @tiagosilva07/zyrax-guard-linux-arm64@X.Y.Z --force
+npm unpublish @tiagosilva07/zyrax-guard-darwin-amd64@X.Y.Z --force
+npm unpublish @tiagosilva07/zyrax-guard-darwin-arm64@X.Y.Z --force
+npm unpublish @tiagosilva07/zyrax-guard-windows-amd64@X.Y.Z --force
+npm unpublish @tiagosilva07/zyrax-guard-windows-arm64@X.Y.Z --force
+```
+
+After the 72-hour window has passed (or as a softer stop before it):
+```bash
+npm deprecate zyrax-guard@X.Y.Z "Security issue — do not use. Upgrade to vX.Y.Z+1 or later."
+# repeat for each platform package above
+```
+
+### 3. Re-point the floating `@v0` action tag *(repo write)*
+
+Users who reference `tiagosilva07/zyrax-guard@v0` in their workflows will get the bad
+release until this tag is moved. Re-point it to the last known-good commit:
+
+```bash
+GOOD_SHA=<commit-sha-of-last-good-release>
+git tag -f v0 "$GOOD_SHA"
+git push -f origin v0
+```
+
+> This is a force-push of a tag — it is intentional and expected for a floating convenience
+> tag. It only affects users who reference `@v0`; users pinned to an exact version (e.g.
+> `@v0.8.1`) are unaffected until they update.
+
+### 4. Revert the Homebrew formula *(tap write — `HOMEBREW_TAP_TOKEN`)*
+
+In the `tiagosilva07/homebrew-zyrax` tap repository, revert the formula to the last good
+version:
+
+```bash
+# In the tap repo:
+git revert <commit-that-bumped-to-bad-version>
+git push origin main
+```
+
+Or manually restore the previous `url` and `sha256` entries in `Formula/zyrax-guard.rb`
+and push a fixup commit.
+
+### 5. Cut a fixed patch release
+
+Once the root cause is resolved:
+
+1. Create a `fix/<desc>` branch from `develop`, fix the issue, open a PR to `develop`.
+2. When merged, open a release PR from `develop` to `main`.
+3. After merging to `main`, tag `vX.Y.Z+1` — the release workflow builds, signs, and publishes automatically.
+4. Re-run steps 2–4 above in reverse (publish the new version; the `@v0` tag will be moved forward by the release workflow).
+
+### Credentials summary
+
+| Step | Credential needed |
+|------|-------------------|
+| Mark release as pre-release / delete tag | GitHub repo write (maintainer role) |
+| `npm unpublish` / `npm deprecate` | npm Automation token (`NPM_TOKEN`) with publish rights on `zyrax-guard` and `@tiagosilva07/*` |
+| Force-push `v0` tag | GitHub repo write |
+| Revert Homebrew formula | `HOMEBREW_TAP_TOKEN` (fine-grained PAT with `contents:write` on `tiagosilva07/homebrew-zyrax`) |
