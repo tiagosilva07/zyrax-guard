@@ -107,6 +107,25 @@ go build -o zyrax-guard ./cmd/zyrax-guard
 
 ---
 
+## Updating
+
+Guard checks for a newer release at most once a day (a read-only lookup of its own version
+on `registry.npmjs.org`) and prints a one-line notice on stderr when one is available. To
+update:
+
+```bash
+zyrax-guard upgrade          # detects how Guard was installed and updates it
+zyrax-guard version --check  # force a version check now
+```
+
+`upgrade` delegates to your package manager (`npm`/`brew`/`go`) when Guard was installed that
+way; for `curl|sh` / standalone-binary installs on Linux/macOS it downloads the signed release,
+**verifies its SHA-256 against the signed `checksums.txt` before replacing the binary** (and the
+cosign signature when `cosign` is available). Standalone Windows binaries are upgraded manually
+for now (the notice links to Releases). Disable the daily check with `ZYRAX_NO_UPDATE_CHECK=1`.
+
+---
+
 ## Quickstart
 
 ### Audit AI agent configs
@@ -364,6 +383,9 @@ policy file — no config file or environment variables required.
 | `allow <name>` | Add a package to the local allowlist |
 | `init` | Print the shell hook (gate installs transparently) |
 | `mcp` | Run the MCP server (`check_package`, `scan_agents`) |
+| `mcp install [--global]` | Register Guard with your AI agent |
+| `upgrade` | Update Guard to the latest release (verified) |
+| `version [--check]` | Print version; `--check` checks for a newer release |
 
 ### Flags
 
@@ -459,6 +481,24 @@ audit the configs it's about to act on — and a `check_package` tool it calls b
 install (AI agents hallucinate package names; attackers pre-register them as malware,
 and Guard breaks that chain).
 
+**One-step register (recommended):**
+
+```bash
+zyrax-guard mcp install            # writes ./.mcp.json for this project
+zyrax-guard mcp install --global   # registers globally with Claude Code (user scope)
+```
+
+`mcp install` writes a standard `.mcp.json` (read by Claude Code, Cursor, and VS Code) and
+auto-detects whether to register `zyrax-guard mcp` (binary on PATH) or `npx -y zyrax-guard mcp`.
+Override with `--command binary|npx`. `--global` delegates to `claude mcp add -s user` (it prints
+the manual command if the `claude` CLI isn't installed).
+
+Manual one-liner (Claude Code):
+
+```bash
+claude mcp add zyrax-guard -- npx -y zyrax-guard mcp
+```
+
 → **[MCP setup for Claude Code, Cursor, Windsurf, VS Code, and Continue.dev](docs/mcp-integrations.md)**
 
 Guard is on the official MCP registry as `io.github.tiagosilva07/zyrax-guard` — register it
@@ -484,6 +524,8 @@ against public registry APIs:
 - `registry.npmjs.org` — existence and metadata
 - `api.npmjs.org` — download counts
 - `api.osv.dev` — known advisories
+- `registry.npmjs.org` — Guard's own latest version (update check, ≤1×/day; disable with `ZYRAX_NO_UPDATE_CHECK=1`)
+- `github.com` — only when you run `zyrax-guard upgrade` (downloads the signed release binary)
 
 No telemetry. No account. No secrets sent anywhere. The binary is reproducible
 (`-trimpath`), and every release ships SLSA L3 provenance so you can verify the build

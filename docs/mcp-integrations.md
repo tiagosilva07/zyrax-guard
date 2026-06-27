@@ -10,6 +10,17 @@ Register `zyrax-guard mcp` as an MCP server and your agent gains two tools:
 
 The server is published on the official MCP registry as `io.github.tiagosilva07/zyrax-guard`.
 
+## One-step install (recommended)
+
+```bash
+zyrax-guard mcp install            # writes ./.mcp.json (Claude Code, Cursor, VS Code)
+zyrax-guard mcp install --global   # registers globally with Claude Code (user scope)
+```
+
+This merges a `zyrax-guard` entry into your `.mcp.json` without touching other servers, and
+auto-detects the right command (`zyrax-guard mcp` vs `npx -y zyrax-guard mcp`). The
+client-specific JSON below is the manual equivalent.
+
 ## Claude Code CLI
 
 Register Guard as a persistent MCP tool so Claude checks packages automatically:
