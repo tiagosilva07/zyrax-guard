@@ -1,10 +1,38 @@
 package selfupdate
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/tiagosilva07/zyrax-guard/internal/httpx"
 )
+
+// Fetcher returns the latest published version string, or an error.
+type Fetcher func(ctx context.Context) (string, error)
+
+// NPMRegistryURL is the canonical source for Guard's own latest version. Its host is
+// already in the SSRF allowlist and already disclosed in the privacy promise.
+const NPMRegistryURL = "https://registry.npmjs.org/zyrax-guard/latest"
+
+// npmFetcher builds a Fetcher that GETs url (the npm "latest" doc) and reads .version.
+func npmFetcher(c *httpx.Client, url string) Fetcher {
+	return func(ctx context.Context) (string, error) {
+		var doc struct {
+			Version string `json:"version"`
+		}
+		code, err := c.GetJSON(ctx, url, &doc)
+		if err != nil {
+			return "", err
+		}
+		if code != 200 || doc.Version == "" {
+			return "", fmt.Errorf("npm latest: status %d", code)
+		}
+		return doc.Version, nil
+	}
+}
 
 type cacheState struct {
 	LastCheck int64  `json:"last_check"`
