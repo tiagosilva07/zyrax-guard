@@ -36,10 +36,7 @@ func New(allow []string) *Client {
 	c.hc = &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if !c.hostAllowed(req.URL) {
-				return fmt.Errorf("redirect to disallowed host %q blocked", req.URL.Host)
-			}
-			return nil
+			return c.checkRedirectScheme(req.URL)
 		},
 	}
 	c.maxAttempts = 3
@@ -124,6 +121,15 @@ func schemeOK(u *url.URL) error {
 		return nil // permit plaintext only to loopback (test servers)
 	}
 	return fmt.Errorf("only HTTPS is allowed (got scheme %q for host %q)", u.Scheme, u.Host)
+}
+
+// checkRedirectScheme enforces the same scheme+host guarantees on a redirect target
+// that the initial request enforced: an allowlisted host AND HTTPS (or loopback http).
+func (c *Client) checkRedirectScheme(u *url.URL) error {
+	if !c.hostAllowed(u) {
+		return fmt.Errorf("redirect to disallowed host %q blocked", u.Host)
+	}
+	return schemeOK(u)
 }
 
 // GetJSON GETs url and, on 200, decodes the body into out (may be nil to skip).

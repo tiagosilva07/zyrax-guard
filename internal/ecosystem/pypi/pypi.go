@@ -144,7 +144,10 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 		return nil, err
 	}
 	url := p.registryBase + "/pypi/" + normalize(name) + "/json"
-	if version != "" && safeVersion.MatchString(version) {
+	if version != "" {
+		if strings.Contains(version, "..") || !safeVersion.MatchString(version) {
+			return nil, fmt.Errorf("invalid pypi version %q", version)
+		}
 		url = p.registryBase + "/pypi/" + normalize(name) + "/" + version + "/json"
 	}
 	var u pypiURLs

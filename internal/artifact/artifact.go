@@ -15,13 +15,29 @@ import (
 )
 
 type Limits struct {
-	MaxTotalBytes int64 // total decompressed bytes across all kept files
-	MaxFileBytes  int64 // per-file cap
-	MaxFiles      int   // number of entries processed
+	MaxTotalBytes        int64 // total decompressed bytes across all kept files
+	MaxFileBytes         int64 // per-file cap
+	MaxFiles             int   // number of entries processed
+	MaxDecompressedBytes int64 // hard ceiling on bytes pulled from gzip (incl. skipped) — zip-bomb guard
 }
 
 func DefaultLimits() Limits {
-	return Limits{MaxTotalBytes: 64 << 20, MaxFileBytes: 1 << 20, MaxFiles: 2000}
+	return Limits{MaxTotalBytes: 64 << 20, MaxFileBytes: 1 << 20, MaxFiles: 2000, MaxDecompressedBytes: 256 << 20}
+}
+
+type countingReader struct {
+	r   io.Reader
+	n   int64
+	max int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	if c.max > 0 && c.n > c.max {
+		return 0, fmt.Errorf("decompressed stream exceeds %d bytes (possible zip bomb)", c.max)
+	}
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 // ExtractTarGz returns regular-file path->content. Entries that are symlinks/hard
@@ -33,7 +49,7 @@ func ExtractTarGz(b []byte, lim Limits) (map[string]string, error) {
 		return nil, fmt.Errorf("gzip: %w", err)
 	}
 	defer gz.Close()
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(&countingReader{r: gz, max: lim.MaxDecompressedBytes})
 	out := map[string]string{}
 	var total int64
 	count := 0

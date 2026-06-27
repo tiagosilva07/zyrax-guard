@@ -60,6 +60,26 @@ func TestExtractFileCountCap(t *testing.T) {
 	}
 }
 
+func TestExtractTarGzCapsTotalDecompression(t *testing.T) {
+	// One entry larger than MaxFileBytes (so it's skipped) but whose decompressed size
+	// exceeds a small MaxDecompressedBytes must abort rather than decompress it all.
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	big := make([]byte, 2<<20) // 2 MiB entry
+	tw.WriteHeader(&tar.Header{Name: "big.bin", Mode: 0o644, Size: int64(len(big)), Typeflag: tar.TypeReg})
+	tw.Write(big)
+	tw.Close()
+	gz.Close()
+
+	lim := DefaultLimits()
+	lim.MaxFileBytes = 1 << 10          // 1 KiB → big.bin is skipped
+	lim.MaxDecompressedBytes = 64 << 10 // 64 KiB ceiling → must abort while skipping
+	if _, err := ExtractTarGz(buf.Bytes(), lim); err == nil {
+		t.Fatal("expected decompression-cap error when a skipped entry exceeds MaxDecompressedBytes")
+	}
+}
+
 func fmtName(i int) string {
 	return "package/f" + string(rune('a'+i%26)) + string(rune('0'+i/26)) + ".js"
 }

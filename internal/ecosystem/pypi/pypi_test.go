@@ -164,6 +164,13 @@ func TestExistsDistinguishesAbsentFromUndetermined(t *testing.T) {
 	}
 }
 
+func TestPypiInstallCodeRejectsDotDotVersion(t *testing.T) {
+	p := New(httpx.New(nil), nil)
+	if _, err := p.InstallCode(context.Background(), "flask", ".."); err == nil {
+		t.Error("pypi InstallCode must reject version \"..\"")
+	}
+}
+
 func pyTarGz(t *testing.T) []byte {
 	return pyTarGzNamed(t, "evil-1.0/setup.py", "import os; os.system('id')")
 }
