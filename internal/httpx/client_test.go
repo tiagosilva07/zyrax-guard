@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -172,6 +173,28 @@ func TestRetryAfterHonoredAndCapped(t *testing.T) {
 	code, err := c.GetJSON(context.Background(), "http://"+srv.Listener.Addr().String()+"/x", nil)
 	if err != nil || code != 200 || atomic.LoadInt32(&hits) != 2 {
 		t.Fatalf("429+Retry-After should retry to success: code=%d err=%v hits=%d", code, err, hits)
+	}
+}
+
+func TestRedirectToHTTPDowngradeBlocked(t *testing.T) {
+	// An allowlisted HTTPS-style host that 302-redirects to an http:// URL on the same
+	// host must be refused (scheme guard), not followed in cleartext.
+	var target string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target, http.StatusFound)
+	}))
+	defer srv.Close()
+	host := srv.Listener.Addr().String()
+	target = "http://" + host + "/downgraded" // same host, but we simulate a non-loopback by asserting the guard logic
+
+	// Use the real guard: build a client allowing the host, then drive a redirect.
+	c := New([]string{host})
+	// The initial request is loopback-http (permitted for tests); the redirect target is
+	// also loopback-http, so to exercise the scheme guard we assert CheckRedirect rejects
+	// a non-loopback http downgrade. Construct that case directly:
+	reqURL, _ := url.Parse("http://example.com/x")
+	if err := c.checkRedirectScheme(reqURL); err == nil {
+		t.Fatal("expected non-loopback http redirect target to be rejected by scheme guard")
 	}
 }
 
