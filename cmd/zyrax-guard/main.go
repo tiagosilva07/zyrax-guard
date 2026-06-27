@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/tiagosilva07/zyrax-guard/internal/data"
 	"github.com/tiagosilva07/zyrax-guard/internal/hook"
 	"github.com/tiagosilva07/zyrax-guard/internal/mcp"
+	"github.com/tiagosilva07/zyrax-guard/internal/mcpinstall"
 	"github.com/tiagosilva07/zyrax-guard/internal/report"
 	"github.com/tiagosilva07/zyrax-guard/internal/seam"
 	"github.com/tiagosilva07/zyrax-guard/internal/selfupdate"
@@ -429,10 +431,17 @@ func scanExit(verdicts []string, strict bool) int {
 }
 
 func cmdMCP(args []string) int {
-	if len(args) != 0 {
-		fmt.Fprintln(os.Stderr, "usage: zyrax-guard mcp   (no flags; serves MCP over stdio)")
-		return 2
+	if len(args) == 0 {
+		return mcpServe()
 	}
+	if args[0] == "install" {
+		return cmdMCPInstall(args[1:])
+	}
+	fmt.Fprintln(os.Stderr, "usage: zyrax-guard mcp [install]   (no args: serve over stdio)")
+	return 2
+}
+
+func mcpServe() int {
 	srv := &mcp.Server{Version: version, Resolve: func(eco string) (mcp.Checker, error) {
 		return check.New(eco, ".")
 	}}
@@ -440,6 +449,61 @@ func cmdMCP(args []string) int {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		return 1
 	}
+	return 0
+}
+
+func cmdMCPInstall(args []string) int {
+	fs := flag.NewFlagSet("mcp install", flag.ContinueOnError)
+	global := fs.Bool("global", false, "register globally via the client CLI (Claude Code)")
+	command := fs.String("command", "", "override registered command: binary|npx")
+	client := fs.String("client", "claude", "global client (only 'claude' supported)")
+	if err := fs.Parse(reorderFlagsFirst(args, "command", "client")); err != nil {
+		return 2
+	}
+	if *command != "" && *command != "binary" && *command != "npx" {
+		fmt.Fprintf(os.Stderr, "invalid --command %q (want binary|npx)\n", *command)
+		return 2
+	}
+	exe, err := os.Executable()
+	if err == nil {
+		if p, e := filepath.EvalSymlinks(exe); e == nil {
+			exe = p
+		}
+	}
+	cmd := mcpinstall.ResolveCommand(*command, exe)
+
+	if *global {
+		return mcpInstallGlobal(*client, cmd)
+	}
+	path := ".mcp.json"
+	if err := mcpinstall.WriteProjectConfig(path, cmd); err != nil {
+		fmt.Fprintln(os.Stderr, "mcp install:", err)
+		return 1
+	}
+	fmt.Printf("Registered zyrax-guard in %s (command: %s).\nRestart your agent to pick it up.\n",
+		path, strings.Join(cmd, " "))
+	return 0
+}
+
+func mcpInstallGlobal(client string, cmd []string) int {
+	if client != "claude" {
+		fmt.Fprintf(os.Stderr, "--global only supports --client claude for now\n")
+		return 2
+	}
+	addArgs := append([]string{"mcp", "add", "-s", "user", "zyrax-guard", "--"}, cmd...)
+	if _, err := exec.LookPath("claude"); err != nil {
+		fmt.Fprintf(os.Stderr,
+			"the 'claude' CLI was not found on PATH.\nRun this manually:\n  claude %s\n",
+			strings.Join(addArgs, " "))
+		return 1
+	}
+	c := exec.Command("claude", addArgs...)
+	c.Stdout, c.Stderr = os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "mcp install --global:", err)
+		return 1
+	}
+	fmt.Println("Registered zyrax-guard globally with Claude Code (user scope).")
 	return 0
 }
 

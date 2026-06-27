@@ -168,3 +168,24 @@ func TestUpgradeMethodFlagParsed(t *testing.T) {
 		t.Errorf("bogus method exit=%d want 2", code)
 	}
 }
+
+func TestMCPInstallProjectWritesConfig(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	os.Chdir(dir)
+
+	if code := run([]string{"mcp", "install", "--command", "npx"}); code != 0 {
+		t.Fatalf("mcp install exit=%d want 0", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, ".mcp.json")); err != nil {
+		t.Fatalf(".mcp.json not written: %v", err)
+	}
+}
+
+func TestMCPBareStillRejectsArgs(t *testing.T) {
+	// `mcp serve-ish` with an unknown subcommand is rejected (exit 2).
+	if code := run([]string{"mcp", "bogus"}); code != 2 {
+		t.Errorf("mcp bogus exit=%d want 2", code)
+	}
+}
