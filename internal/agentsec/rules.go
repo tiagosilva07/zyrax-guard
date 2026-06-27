@@ -840,9 +840,9 @@ func ruleMCPToolDescription(content, filePath string) []Finding {
 	var findings []Finding
 	for serverName, srv := range cfg.MCPServers {
 		for _, tool := range srv.Tools {
-			lower := strings.ToLower(tool.Description)
+			folded := foldForMatch(tool.Description)
 			for _, kw := range injectionKeywords {
-				if strings.Contains(lower, kw) {
+				if strings.Contains(folded, foldForMatch(kw)) {
 					findings = append(findings, Finding{
 						RuleID:      "prompt-injection/tool-description",
 						Severity:    "CRITICAL",
