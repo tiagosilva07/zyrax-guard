@@ -63,7 +63,7 @@ func (s *Server) Serve(r io.Reader, w io.Writer) error {
 			_ = enc.Encode(rpcResponse{JSONRPC: "2.0", Error: &rpcError{Code: -32700, Message: "parse error"}})
 			continue
 		}
-		resp, respond := s.dispatch(&req)
+		resp, respond := s.dispatchSafe(&req)
 		if respond {
 			if err := enc.Encode(resp); err != nil {
 				return err
@@ -71,6 +71,22 @@ func (s *Server) Serve(r io.Reader, w io.Writer) error {
 		}
 	}
 	return sc.Err()
+}
+
+// dispatchSafe runs dispatch but converts any panic in a handler into a JSON-RPC
+// internal error, so a single malformed/hostile request can never kill the server.
+func (s *Server) dispatchSafe(req *rpcRequest) (resp rpcResponse, respond bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			if len(req.ID) == 0 {
+				resp, respond = rpcResponse{}, false // notification: nothing to send
+				return
+			}
+			resp = rpcResponse{JSONRPC: "2.0", ID: req.ID, Error: &rpcError{Code: -32603, Message: "internal error"}}
+			respond = true
+		}
+	}()
+	return s.dispatch(req)
 }
 
 func (s *Server) dispatch(req *rpcRequest) (rpcResponse, bool) {
