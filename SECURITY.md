@@ -42,6 +42,26 @@ Zyrax Guard is itself a security tool. These invariants must never regress:
 - **Reproducible builds.** Releases are built with `-trimpath` and ship SLSA L3
   provenance and a cosign bundle so you can verify the build chain independently.
 
+## Operational controls
+
+Controls that are actively enforced in this repository:
+
+- **Branch protection.** Direct pushes to `main` and `develop` are blocked; all changes arrive via pull request.
+- **SHA-pinned GitHub Actions.** Every third-party action in `.github/workflows/` is pinned to a full commit SHA (not a mutable tag) to prevent tag-hijacking supply-chain attacks.
+- **CI gates on every PR.** The `ci.yml` workflow must pass before a PR can merge; it enforces:
+  - `gofmt` formatting (unformatted files fail the build)
+  - `go vet ./...`
+  - `go build ./...`
+  - `go test -race -count=1 ./...`
+  - `govulncheck ./...` (known Go vulnerability database)
+  - `staticcheck ./...`
+  - 20-second fuzz run (`FuzzDamerau`)
+  - gitleaks secret scan (full git history)
+  - dependency-review (PR events only — blocks high+ severity CVEs and GPL/AGPL/LGPL licenses)
+- **Signed releases with provenance.** Every release binary is cosign-signed (keyless, SLSA L3), ships an SBOM (`zyrax-guard.spdx.json` in SPDX format), and a `checksums.txt` (SHA-256).
+- **Verified self-upgrade.** `zyrax-guard upgrade` verifies the SHA-256 checksum against the signed `checksums.txt` and (when `cosign` is available) verifies the keyless cosign signature before replacing the binary. A signature mismatch aborts the upgrade.
+- **Least-privilege workflow permissions.** The top-level `permissions: {}` in `ci.yml` denies all permissions by default; individual jobs grant only what they need (e.g. `contents: read`).
+
 ## Scope
 
 In scope:

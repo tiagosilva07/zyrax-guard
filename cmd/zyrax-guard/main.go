@@ -16,7 +16,6 @@ import (
 
 	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
 	"github.com/tiagosilva07/zyrax-guard/internal/check"
-	"github.com/tiagosilva07/zyrax-guard/internal/data"
 	"github.com/tiagosilva07/zyrax-guard/internal/hook"
 	"github.com/tiagosilva07/zyrax-guard/internal/mcp"
 	"github.com/tiagosilva07/zyrax-guard/internal/mcpinstall"
@@ -34,7 +33,7 @@ func usage() string {
 usage:
   zyrax-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict] [--deep]
   zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep]
-  zyrax-guard allow <name>
+  zyrax-guard allow [--ecosystem npm|pypi|crates] <name>
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
@@ -307,24 +306,30 @@ func bareNames(raw []string) []string {
 }
 
 func cmdAllow(args []string) int {
-	if len(args) != 1 {
+	fs := flag.NewFlagSet("allow", flag.ContinueOnError)
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	if err := fs.Parse(reorderFlagsFirst(args, "ecosystem")); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
 		fmt.Fprint(os.Stderr, usage())
 		return 2
 	}
-	orch, err := check.NewNPM(".", nil)
+	orch, err := check.New(*eco, ".")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	if err := orch.Eco.ValidateName(args[0]); err != nil {
+	name := fs.Arg(0)
+	if err := orch.Eco.ValidateName(name); err != nil {
 		fmt.Fprintln(os.Stderr, "invalid package name:", err)
 		return 2
 	}
-	if err := orch.Policy.Allow(args[0]); err != nil {
+	if err := orch.Policy.Allow(name); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	fmt.Printf("allowed %q (recorded in .zyrax/policy.json)\n", args[0])
+	fmt.Printf("allowed %q (recorded in .zyrax/policy.json)\n", name)
 	return 0
 }
 
@@ -524,8 +529,6 @@ func cmdInit(args []string) int {
 	fmt.Println(snippet)
 	return 0
 }
-
-func loadPopular() []string { return data.PopularNPM() }
 
 // cmdScanAgents audits AI agent configuration files in a directory for prompt
 // injection, malicious MCP hosts, excessive permissions, and supply-chain risks.

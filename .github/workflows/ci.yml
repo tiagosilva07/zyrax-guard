@@ -16,4 +16,31 @@ jobs:
       - run: go build ./...
       - run: go test -race -count=1 ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
       - run: go test -run x -fuzz FuzzDamerau -fuzztime 20s ./internal/check/
+
+  # Scan for accidentally-committed secrets in the full git history.
+  secrets:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
+        with: { fetch-depth: 0 }  # full history so gitleaks can walk all commits
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # pin: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_SUMMARY: false
+
+  # Review dependency changes for high-severity CVEs and prohibited licenses.
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48  # pin: actions/dependency-review-action@v4.9.0
+        with:
+          fail-on-severity: high
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-3.0

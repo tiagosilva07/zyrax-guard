@@ -249,6 +249,8 @@ Gate every pull request. By default (`scan: both`) Zyrax Guard audits AI agent c
 added in the PR, failing the check if anything is blocked. Add
 `.github/workflows/zyrax-guard.yml`:
 
+> **Pin for production:** these examples pin third-party actions to commit SHAs — mutable tags are a supply-chain risk (the exact risk Guard exists to catch). Pin `zyrax-guard` to an exact version or commit SHA too for fully reproducible CI.
+
 ```yaml
 name: Zyrax Guard
 on: pull_request
@@ -256,7 +258,7 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
         with:
           fetch-depth: 0          # lets Guard diff against the PR base (added deps only)
       - uses: tiagosilva07/zyrax-guard@v0
@@ -282,7 +284,7 @@ Upload results to **GitHub Code Scanning** so findings show up inline on the PR:
         with:
           sarif-file: zyrax-guard.sarif
           fail-on-block: "false"   # let Code Scanning surface findings; don't hard-fail
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard.sarif
 ```
@@ -296,11 +298,11 @@ Audit agent configs **and** dependencies, both surfaced in Code Scanning:
           sarif-file: zyrax-guard-deps.sarif
           agents-sarif-file: zyrax-guard-agents.sarif
           fail-on-block: "false"
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard-deps.sarif
           category: zyrax-guard-deps
-      - uses: github/codeql-action/upload-sarif@v3
+      - uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357  # pin: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: zyrax-guard-agents.sarif
           category: zyrax-guard-agents

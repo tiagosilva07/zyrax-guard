@@ -22,7 +22,7 @@ func TestEvaluateFilePromptInjection(t *testing.T) {
 }
 
 func TestEvaluateFileHiddenUnicode(t *testing.T) {
-	content := "normal text ​ hidden"
+	content := "normal text \u200b hidden"
 	findings := evaluateFile(".", "CLAUDE.md", content)
 	found := false
 	for _, f := range findings {
