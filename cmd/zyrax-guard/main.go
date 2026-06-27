@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -125,10 +126,48 @@ func maybeNotify(cmd string, args []string) {
 	selfupdate.CheckAndNotify(os.Stderr, version, selfupdate.Options{Quiet: quietOutput(args)})
 }
 
-// cmdUpgrade is a stub — the real body lands in Task 9.
-func cmdUpgrade(_ []string) int {
-	fmt.Fprintln(os.Stderr, "upgrade: not yet implemented")
-	return 1
+func cmdUpgrade(args []string) int {
+	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
+	method := fs.String("method", "", "override install-method detection: npm|brew|go|binary")
+	if err := fs.Parse(reorderFlagsFirst(args, "method")); err != nil {
+		return 2
+	}
+	m := selfupdate.Method(*method)
+	if *method != "" {
+		switch m {
+		case selfupdate.MethodNPM, selfupdate.MethodBrew, selfupdate.MethodGo, selfupdate.MethodBinary:
+		default:
+			fmt.Fprintf(os.Stderr, "invalid --method %q (want npm|brew|go|binary)\n", *method)
+			return 2
+		}
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "upgrade: cannot resolve own path:", err)
+		return 1
+	}
+	if p, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = p
+	}
+	if m == "" {
+		gobin := os.Getenv("GOBIN")
+		if gobin == "" {
+			if home, err := os.UserHomeDir(); err == nil {
+				gobin = filepath.Join(home, "go", "bin")
+			}
+		}
+		m = selfupdate.DetectInstall(exe, gobin)
+	}
+	err = selfupdate.Upgrade(os.Stdout, selfupdate.UpgradeOptions{
+		Current:  version,
+		Method:   m,
+		ExecPath: exe,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "upgrade:", err)
+		return 1
+	}
+	return 0
 }
 
 // reorderFlagsFirst moves leading-dash tokens ahead of operands so flags may

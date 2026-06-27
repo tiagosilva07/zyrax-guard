@@ -161,3 +161,10 @@ func TestVersionCheckFlagAccepted(t *testing.T) {
 		t.Errorf("version --check exit=%d want 0", code)
 	}
 }
+
+func TestUpgradeMethodFlagParsed(t *testing.T) {
+	// `upgrade --method bogus` is rejected (exit 2) before any network.
+	if code := run([]string{"upgrade", "--method", "bogus"}); code != 2 {
+		t.Errorf("bogus method exit=%d want 2", code)
+	}
+}
