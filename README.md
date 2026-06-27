@@ -361,6 +361,7 @@ Guard runs against public registry metadata only — no local execution, no inst
 | **Known-bad** | OSV advisory match → malware / high-severity → **BLOCK**; low-severity → **WARN** |
 | **Age & popularity** | Published < 30 days AND < 50 weekly downloads → **WARN** |
 | **Lockfile integrity** | *(scan only)* Resolved URL or integrity hash changed → **BLOCK** |
+| **Maintainer change** | *(npm)* The resolved version was published by an account that never published a prior version → **WARN** (possible account takeover) |
 
 Transient registry/OSV failures (429 or 5xx) are retried with backoff (honoring `Retry-After`)
 before Guard gives up; only a persistent failure yields **ERROR** (fail closed — see [Verdicts](#verdicts)).
