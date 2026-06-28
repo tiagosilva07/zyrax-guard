@@ -28,7 +28,7 @@ Scanning . for agent config files...
 
 $ zyrax-guard check lodahs
 ✗ lodahs@0.0.1-security — BLOCK
-  - looks like a typo of "lodash" (far more popular); this name has only 45 weekly downloads
+  - name is similar to "lodash" — double-check you meant this package
   - MAL-2025-25502: Malicious code in lodahs (npm)
   did you mean: lodash
   to override:  zyrax-guard allow lodahs
@@ -36,6 +36,17 @@ $ zyrax-guard check lodahs
 
 Works locally, in CI, and as a gate for AI coding agents. No account required. Nothing
 phones home except the public package name you are querying.
+
+**Get it (pick one):**
+
+```bash
+npx zyrax-guard@latest scan-agents .            # no install — audit this repo's agent configs
+brew install tiagosilva07/zyrax/zyrax-guard     # macOS / Linux
+go install github.com/tiagosilva07/zyrax-guard/cmd/zyrax-guard@latest
+```
+
+Then: `zyrax-guard scan-agents .` to audit configs, or `zyrax-guard check <pkg>` to vet a package.
+Full install options (signed binary, `curl|sh`) and verification are below.
 
 🌐 **Homepage:** [zyrax.io](https://zyrax.io)
 
@@ -350,7 +361,6 @@ Guard runs against public registry metadata only — no local execution, no inst
 | **Known-bad** | OSV advisory match → malware / high-severity → **BLOCK**; low-severity → **WARN** |
 | **Age & popularity** | Published < 30 days AND < 50 weekly downloads → **WARN** |
 | **Lockfile integrity** | *(scan only)* Resolved URL or integrity hash changed → **BLOCK** |
-| **Maintainer change** | *(scan only)* New version published by a previously unseen maintainer → **WARN** |
 
 Transient registry/OSV failures (429 or 5xx) are retried with backoff (honoring `Retry-After`)
 before Guard gives up; only a persistent failure yields **ERROR** (fail closed — see [Verdicts](#verdicts)).
