@@ -16,3 +16,10 @@ func TestPopularPyPIAndCratesNonEmpty(t *testing.T) {
 		t.Errorf("crates list too small: %d", len(PopularCrates()))
 	}
 }
+
+func TestDenylistEmbedNonEmpty(t *testing.T) {
+	d := Denylist()
+	if len(d["npm"]) == 0 {
+		t.Fatal("embedded denylist must contain the npm seed entries")
+	}
+}

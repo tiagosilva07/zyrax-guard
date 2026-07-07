@@ -57,3 +57,15 @@ func TestOSVLookup_DegradedReturnsErrorButKeepsDenylistFloor(t *testing.T) {
 		t.Fatalf("denylist must still fire on OSV downtime: %+v", advs)
 	}
 }
+
+func TestInDenylistSeedEntries(t *testing.T) {
+	if !InDenylist("npm", "crossenv") {
+		t.Error("crossenv must be in the npm denylist")
+	}
+	if InDenylist("npm", "lodash") {
+		t.Error("lodash must not be in the denylist")
+	}
+	if InDenylist("pypi", "crossenv") {
+		t.Error("denylist entries are per-ecosystem")
+	}
+}
