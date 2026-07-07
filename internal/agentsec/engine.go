@@ -37,6 +37,15 @@ var agentConfigNames = map[string]bool{
 // filter is applied per file and the number of dropped findings is returned in
 // suppressed so callers can always surface that suppression occurred.
 func ScanDir(root string, ignoreAllow bool) (findings []Finding, scanned []string, suppressed int, err error) {
+	// Fail closed on an unusable root: WalkDir swallows the root stat error, so
+	// without this check a typo'd path in CI would scan zero files and exit clean.
+	fi, statErr := os.Stat(root)
+	if statErr != nil {
+		return nil, nil, 0, fmt.Errorf("scan root: %w", statErr)
+	}
+	if !fi.IsDir() {
+		return nil, nil, 0, fmt.Errorf("scan root %q is not a directory", root)
+	}
 	files, derr := discoverAgentFiles(root)
 	if derr != nil {
 		return nil, nil, 0, derr

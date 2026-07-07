@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/httpx"
+	"github.com/tiagosilva07/zyrax-guard/internal/seam"
+	"slices"
 )
 
 func newTestProvider(t *testing.T, h http.Handler) *Provider {
@@ -129,4 +131,25 @@ func npmTarGz(t *testing.T) []byte {
 	tw.Close()
 	gz.Close()
 	return buf.Bytes()
+}
+
+func TestInstallArgsPinsVettedVersion(t *testing.T) {
+	p := New(nil, nil)
+	args, err := p.installArgs(
+		[]seam.InstallRef{{Name: "lodash", Version: "4.17.20"}, {Name: "axios"}},
+		seam.InstallOpts{IgnoreScripts: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"install", "--ignore-scripts", "lodash@4.17.20", "axios"}
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %v, want %v", args, want)
+	}
+	if _, err := p.installArgs([]seam.InstallRef{{Name: "x", Version: "--evil"}}, seam.InstallOpts{}); err == nil {
+		t.Error("flag-shaped version must be rejected before exec")
+	}
+	if _, err := p.installArgs([]seam.InstallRef{{Name: "not a name!"}}, seam.InstallOpts{}); err == nil {
+		t.Error("illegal name must be rejected before exec")
+	}
 }

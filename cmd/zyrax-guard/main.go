@@ -278,11 +278,14 @@ func cmdInstall(args []string) int {
 		return 2
 	}
 	var results []verdict.Result
+	var refs []seam.InstallRef
 	worst := 0
 	for _, raw := range names {
 		n, v := splitNameVersion(raw)
 		r := orch.CheckWith(context.Background(), n, v, *deep)
 		results = append(results, r)
+		// Install the exact name@version that was vetted — never re-resolve.
+		refs = append(refs, seam.InstallRef{Name: n, Version: v})
 		if c := exitForVerdict(r.VerdictStr, *strict); c > worst {
 			worst = c
 		}
@@ -292,19 +295,11 @@ func cmdInstall(args []string) int {
 		fmt.Fprintln(os.Stderr, "blocked — not installing. Override with: zyrax-guard allow <name>")
 		return worst
 	}
-	if err := orch.Eco.Install(context.Background(), bareNames(names), seam.InstallOpts{IgnoreScripts: *ignoreScripts}); err != nil {
+	if err := orch.Eco.Install(context.Background(), refs, seam.InstallOpts{IgnoreScripts: *ignoreScripts}); err != nil {
 		fmt.Fprintln(os.Stderr, "install failed:", err)
 		return 1
 	}
 	return 0
-}
-
-func bareNames(raw []string) []string {
-	out := make([]string, len(raw))
-	for i, r := range raw {
-		out[i], _ = splitNameVersion(r)
-	}
-	return out
 }
 
 func cmdAllow(args []string) int {

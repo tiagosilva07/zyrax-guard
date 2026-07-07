@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
+	"github.com/tiagosilva07/zyrax-guard/internal/report"
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
 )
 
@@ -146,17 +147,20 @@ func toolError(msg string) map[string]any {
 }
 
 // renderForAgent produces a plain-language summary an agent can act on.
+// Registry-derived fields (names, OSV advisory summaries) are sanitized: this
+// text becomes trusted model context, so hidden unicode or control characters
+// in an advisory summary would be a second-order prompt-injection vector.
 func renderForAgent(r verdict.Result) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %s@%s", r.VerdictStr, r.Name, r.Version)
+	fmt.Fprintf(&b, "%s — %s@%s", r.VerdictStr, report.Sanitize(r.Name), report.Sanitize(r.Version))
 	for _, s := range r.Signals {
 		if s.Level == verdict.LevelInfo || s.Message == "" {
 			continue
 		}
-		fmt.Fprintf(&b, "\n  - %s", s.Message)
+		fmt.Fprintf(&b, "\n  - %s", report.Sanitize(s.Message))
 	}
 	if r.Suggestion != "" {
-		fmt.Fprintf(&b, "\n  did you mean: %s", r.Suggestion)
+		fmt.Fprintf(&b, "\n  did you mean: %s", report.Sanitize(r.Suggestion))
 	}
 	switch r.Verdict {
 	case verdict.Block:

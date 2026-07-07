@@ -49,7 +49,11 @@ func parseLock(b []byte) (map[string]LockEntry, error) {
 		if path == "" { // the root project entry
 			continue
 		}
-		name := path[strings.LastIndex(path, "node_modules/")+len("node_modules/"):]
+		i := strings.LastIndex(path, "node_modules/")
+		if i < 0 {
+			continue // workspace package path (e.g. "apps/web") — local, not a registry dep
+		}
+		name := path[i+len("node_modules/"):]
 		out[name] = LockEntry{Name: name, Version: p.Version, Resolved: p.Resolved, Integrity: p.Integrity}
 	}
 	return out, nil

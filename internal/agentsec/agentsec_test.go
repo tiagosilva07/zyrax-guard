@@ -322,6 +322,25 @@ func TestDiscoverAgentFilesEmpty(t *testing.T) {
 	}
 }
 
+func TestScanDirNonexistentRootErrors(t *testing.T) {
+	// A typo'd path in CI must fail the gate, not exit clean with zero files.
+	_, _, _, err := ScanDir(filepath.Join(t.TempDir(), "no-such-dir"), false)
+	if err == nil {
+		t.Fatal("ScanDir on a nonexistent directory must return an error, got nil")
+	}
+}
+
+func TestScanDirRootIsFileErrors(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "CLAUDE.md")
+	if err := os.WriteFile(f, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := ScanDir(f, false)
+	if err == nil {
+		t.Fatal("ScanDir on a non-directory root must return an error, got nil")
+	}
+}
+
 // ── TestFalsePositiveReduction ────────────────────────────────────────────────
 
 func TestFalsePositiveReduction(t *testing.T) {

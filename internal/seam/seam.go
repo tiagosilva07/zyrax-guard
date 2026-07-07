@@ -5,6 +5,8 @@ package seam
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 	"time"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
@@ -33,6 +35,29 @@ type InstallOpts struct {
 	IgnoreScripts bool
 }
 
+// InstallRef is one package to install. Version, when set, pins the install to
+// the exact version that was vetted — the installer must never resolve a
+// different artifact than the one the checks approved.
+type InstallRef struct {
+	Name    string
+	Version string // empty = latest
+}
+
+var versionRe = regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.\-+_!]*$`)
+
+// ValidateVersion rejects anything outside a conservative version grammar so a
+// version string can never smuggle a flag or shell metacharacter into an exec
+// argument. Empty means "latest" and is always valid.
+func ValidateVersion(v string) error {
+	if v == "" {
+		return nil
+	}
+	if len(v) > 128 || !versionRe.MatchString(v) {
+		return fmt.Errorf("%q is not a legal version string", v)
+	}
+	return nil
+}
+
 // Ecosystem abstracts a package registry + its installer. npm in v1.
 type Ecosystem interface {
 	Name() string
@@ -40,7 +65,7 @@ type Ecosystem interface {
 	Exists(ctx context.Context, name, version string) (bool, error)
 	Metadata(ctx context.Context, name string) (Metadata, error)
 	PopularList() []string
-	Install(ctx context.Context, names []string, opts InstallOpts) error
+	Install(ctx context.Context, pkgs []InstallRef, opts InstallOpts) error
 	// InstallCode returns the package's install/build-time code files (path->content)
 	// for static deep analysis. Empty map = no such code.
 	InstallCode(ctx context.Context, name, version string) (map[string]string, error)

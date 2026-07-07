@@ -31,18 +31,20 @@ func (t *Text) Report(results []verdict.Result) error {
 		if ver == "" {
 			ver = "latest"
 		}
-		fmt.Fprintf(t.W, "%s%s %s@%s — %s%s\n", col, mark, r.Name, ver, r.VerdictStr, reset)
+		// Names/versions/messages can carry registry-derived text (e.g. OSV
+		// advisory summaries) — sanitize so it cannot inject terminal escapes.
+		fmt.Fprintf(t.W, "%s%s %s@%s — %s%s\n", col, mark, Sanitize(r.Name), Sanitize(ver), r.VerdictStr, reset)
 		for _, s := range r.Signals {
 			if s.Level == verdict.LevelInfo || s.Message == "" {
 				continue
 			}
-			fmt.Fprintf(t.W, "  - %s\n", s.Message)
+			fmt.Fprintf(t.W, "  - %s\n", Sanitize(s.Message))
 		}
 		if r.Suggestion != "" {
-			fmt.Fprintf(t.W, "  did you mean: %s\n", r.Suggestion)
+			fmt.Fprintf(t.W, "  did you mean: %s\n", Sanitize(r.Suggestion))
 		}
 		if r.Verdict == verdict.Block {
-			fmt.Fprintf(t.W, "  to override:  zyrax-guard allow %s\n", r.Name)
+			fmt.Fprintf(t.W, "  to override:  zyrax-guard allow %s\n", Sanitize(r.Name))
 		}
 	}
 	return nil
