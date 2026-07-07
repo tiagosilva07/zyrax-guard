@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/httpx"
+	"github.com/tiagosilva07/zyrax-guard/internal/seam"
+	"slices"
 )
 
 func newTestProvider(t *testing.T, h http.Handler) *Provider {
@@ -126,4 +128,19 @@ func crTarGz(t *testing.T) []byte {
 	tw.Close()
 	gz.Close()
 	return buf.Bytes()
+}
+
+func TestInstallArgsPinsVettedVersion(t *testing.T) {
+	p := New(nil, nil)
+	args, err := p.installArgs([]seam.InstallRef{{Name: "serde", Version: "1.0.197"}, {Name: "rand"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"add", "serde@1.0.197", "rand"}
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %v, want %v", args, want)
+	}
+	if _, err := p.installArgs([]seam.InstallRef{{Name: "x", Version: "--evil"}}); err == nil {
+		t.Error("flag-shaped version must be rejected before exec")
+	}
 }

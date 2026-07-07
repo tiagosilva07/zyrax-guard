@@ -19,12 +19,12 @@ type stubEco struct {
 	codeErr   error
 }
 
-func (s stubEco) Name() string                                              { return "npm" }
-func (s stubEco) ValidateName(string) error                                 { return nil }
-func (s stubEco) Exists(context.Context, string, string) (bool, error)      { return s.exists, s.existsErr }
-func (s stubEco) Metadata(context.Context, string) (seam.Metadata, error)   { return s.md, nil }
-func (s stubEco) PopularList() []string                                     { return s.pop }
-func (s stubEco) Install(context.Context, []string, seam.InstallOpts) error { return nil }
+func (s stubEco) Name() string                                                       { return "npm" }
+func (s stubEco) ValidateName(string) error                                          { return nil }
+func (s stubEco) Exists(context.Context, string, string) (bool, error)               { return s.exists, s.existsErr }
+func (s stubEco) Metadata(context.Context, string) (seam.Metadata, error)            { return s.md, nil }
+func (s stubEco) PopularList() []string                                              { return s.pop }
+func (s stubEco) Install(context.Context, []seam.InstallRef, seam.InstallOpts) error { return nil }
 func (s stubEco) InstallCode(context.Context, string, string) (map[string]string, error) {
 	if s.codeErr != nil {
 		return nil, s.codeErr
