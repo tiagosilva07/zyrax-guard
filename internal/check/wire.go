@@ -47,10 +47,4 @@ func New(ecosystem, projectDir string) (*Orchestrator, error) {
 	}, nil
 }
 
-// NewNPM is kept for back-compat; it builds the npm orchestrator. The popular arg
-// is ignored in favour of the bundled list (callers pass loadPopular()/nil).
-func NewNPM(projectDir string, _ []string) (*Orchestrator, error) {
-	return New("npm", projectDir)
-}
-
 var _ seam.Policy = (*policy.Local)(nil)

@@ -112,8 +112,9 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		md.Published = rels[0].UploadTime
 	}
 	var s statsJSON
-	if _, err := p.http.GetJSON(ctx, p.statsBase+"/api/packages/"+n+"/recent", &s); err == nil {
+	if code, err := p.http.GetJSON(ctx, p.statsBase+"/api/packages/"+n+"/recent", &s); err == nil && code == 200 {
 		md.WeeklyLoads = s.Data.LastWeek
+		md.LoadsKnown = true
 	}
 	return md, nil
 }
@@ -155,8 +156,13 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if code != 200 {
+	if code == 404 {
 		return map[string]string{}, nil // not found / no such release → nothing to inspect
+	}
+	if code != 200 {
+		// Must be an error, not an empty map — a registry 5xx during --deep would
+		// otherwise silently read as "no install scripts found".
+		return nil, fmt.Errorf("pypi registry returned %d for %s", code, name)
 	}
 	var sdist string
 	for _, x := range u.URLs {
@@ -175,15 +181,34 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	return artifact.ExtractTarGz(b, artifact.DefaultLimits())
 }
 
-// Install runs `pip install <names>` with names as ARRAY args (never a shell).
-// IgnoreScripts has no pip equivalent and is ignored.
-func (p *Provider) Install(ctx context.Context, names []string, _ seam.InstallOpts) error {
-	for _, n := range names {
-		if err := p.ValidateName(n); err != nil {
-			return err
+// installArgs builds the `pip` argument array. Names and versions are
+// re-validated as defense in depth; a pinned version becomes `name==version`
+// so pip installs exactly the artifact that was vetted.
+func (p *Provider) installArgs(pkgs []seam.InstallRef) ([]string, error) {
+	args := []string{"install"}
+	for _, pkg := range pkgs {
+		if err := p.ValidateName(pkg.Name); err != nil {
+			return nil, err
 		}
+		if err := seam.ValidateVersion(pkg.Version); err != nil {
+			return nil, err
+		}
+		spec := pkg.Name
+		if pkg.Version != "" {
+			spec += "==" + pkg.Version
+		}
+		args = append(args, spec)
 	}
-	args := append([]string{"install"}, names...)
+	return args, nil
+}
+
+// Install runs `pip install <pkgs>` with ARRAY args (never a shell).
+// IgnoreScripts has no pip equivalent and is ignored.
+func (p *Provider) Install(ctx context.Context, pkgs []seam.InstallRef, _ seam.InstallOpts) error {
+	args, err := p.installArgs(pkgs)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, "pip", args...)
 	cmd.Stdout, cmd.Stderr = stdout(), stderr()
 	return cmd.Run()

@@ -42,7 +42,6 @@ const (
 	RuleKnownMalware      = "known-malware"
 	RuleNewAndUnused      = "new-and-unused"
 	RuleLockfileIntegrity = "lockfile-integrity"
-	RuleMaintainerChange  = "maintainer-change"
 	RuleCheckError        = "check-error"
 	RuleSuspiciousInstall = "suspicious-install"
 )

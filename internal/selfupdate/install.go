@@ -209,9 +209,9 @@ func defaultCosignVerify(w io.Writer, requireSig bool) func(context.Context, str
 	return func(ctx context.Context, version, asset string, assetBytes []byte) error {
 		if _, err := exec.LookPath("cosign"); err != nil {
 			if requireSig {
-				return fmt.Errorf("cosign signature required but cosign is not installed")
+				return fmt.Errorf("cosign is not installed — install cosign to verify the release signature, or rerun with --require-signature=false to accept checksum-only verification")
 			}
-			fmt.Fprintln(w, "cosign not found on PATH — skipping signature verification (checksum-only).")
+			fmt.Fprintln(w, "WARNING: cosign not found on PATH — signature verification skipped (checksum-only). The checksum file ships in the same release and cannot detect a compromised release.")
 			return nil
 		}
 		c := httpx.New([]string{"github.com", "objects.githubusercontent.com"})

@@ -322,6 +322,25 @@ func TestDiscoverAgentFilesEmpty(t *testing.T) {
 	}
 }
 
+func TestScanDirNonexistentRootErrors(t *testing.T) {
+	// A typo'd path in CI must fail the gate, not exit clean with zero files.
+	_, _, _, err := ScanDir(filepath.Join(t.TempDir(), "no-such-dir"), false)
+	if err == nil {
+		t.Fatal("ScanDir on a nonexistent directory must return an error, got nil")
+	}
+}
+
+func TestScanDirRootIsFileErrors(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "CLAUDE.md")
+	if err := os.WriteFile(f, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, _, _, err := ScanDir(f, false)
+	if err == nil {
+		t.Fatal("ScanDir on a non-directory root must return an error, got nil")
+	}
+}
+
 // ── TestFalsePositiveReduction ────────────────────────────────────────────────
 
 func TestFalsePositiveReduction(t *testing.T) {
@@ -536,5 +555,34 @@ func TestScanDirSuppressionSurfaced(t *testing.T) {
 	}
 	if auditSuppressed != 0 {
 		t.Errorf("ignoreAllow=true must not count suppressions, got %d", auditSuppressed)
+	}
+}
+
+func TestScanDirOversizeConfigEmitsUnscannableFinding(t *testing.T) {
+	// A config padded past the size cap must be reported, not silently skipped —
+	// silent skipping is a trivial scanner-evasion vector.
+	dir := t.TempDir()
+	big := make([]byte, maxFileSizeBytes+1)
+	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), big, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	findings, scanned, _, err := ScanDir(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scanned) != 1 {
+		t.Fatalf("file must still be listed as discovered, got %v", scanned)
+	}
+	var got *Finding
+	for i := range findings {
+		if findings[i].RuleID == "agent-config/unscannable" {
+			got = &findings[i]
+		}
+	}
+	if got == nil {
+		t.Fatalf("want an agent-config/unscannable finding, got %+v", findings)
+	}
+	if got.Severity != "MEDIUM" {
+		t.Errorf("severity = %s, want MEDIUM", got.Severity)
 	}
 }

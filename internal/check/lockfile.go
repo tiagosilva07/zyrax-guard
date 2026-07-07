@@ -49,37 +49,14 @@ func parseLock(b []byte) (map[string]LockEntry, error) {
 		if path == "" { // the root project entry
 			continue
 		}
-		name := path[strings.LastIndex(path, "node_modules/")+len("node_modules/"):]
+		i := strings.LastIndex(path, "node_modules/")
+		if i < 0 {
+			continue // workspace package path (e.g. "apps/web") — local, not a registry dep
+		}
+		name := path[i+len("node_modules/"):]
 		out[name] = LockEntry{Name: name, Version: p.Version, Resolved: p.Resolved, Integrity: p.Integrity}
 	}
 	return out, nil
-}
-
-// DiffLockfiles returns packages newly added in head, and existing packages whose
-// resolved URL or integrity hash changed (the lockfile-poisoning signal).
-func DiffLockfiles(base, head []byte) (added []LockEntry, changed []LockChange, err error) {
-	b, err := parseLock(base)
-	if err != nil {
-		return nil, nil, err
-	}
-	h, err := parseLock(head)
-	if err != nil {
-		return nil, nil, err
-	}
-	for name, he := range h {
-		be, ok := b[name]
-		if !ok {
-			added = append(added, he)
-			continue
-		}
-		if be.Resolved != he.Resolved || be.Integrity != he.Integrity {
-			changed = append(changed, LockChange{
-				Name: name, Version: he.Version, OldResolved: be.Resolved, New: he.Resolved,
-				OldIntegrity: be.Integrity, NewIntegrity: he.Integrity,
-			})
-		}
-	}
-	return added, changed, nil
 }
 
 // LockfileIntegrity flags an existing dependency whose resolved tarball or integrity

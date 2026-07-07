@@ -7,9 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
+	"github.com/tiagosilva07/zyrax-guard/internal/report"
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
+)
+
+// Per-call wall-clock budgets. checkTimeout comfortably covers the retried
+// registry+OSV lookups; deepCheckTimeout matches the `scan --deep` budget.
+const (
+	checkTimeout     = 60 * time.Second
+	deepCheckTimeout = 3 * time.Minute
 )
 
 func checkPackageTool() map[string]any {
@@ -78,7 +87,15 @@ func (s *Server) callCheckPackage(raw json.RawMessage) map[string]any {
 	if err != nil {
 		return toolError(err.Error())
 	}
-	res := checker.CheckWith(context.Background(), args.Name, args.Version, args.Deep)
+	// Wall-clock budget so a slow registry cannot stall the agent's tool call;
+	// deep checks download and analyze the artifact, so they get more headroom.
+	budget := checkTimeout
+	if args.Deep {
+		budget = deepCheckTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	res := checker.CheckWith(ctx, args.Name, args.Version, args.Deep)
 	structured, _ := json.Marshal(res)
 	text := renderForAgent(res) + "\n\n" + string(structured)
 	return map[string]any{
@@ -146,17 +163,20 @@ func toolError(msg string) map[string]any {
 }
 
 // renderForAgent produces a plain-language summary an agent can act on.
+// Registry-derived fields (names, OSV advisory summaries) are sanitized: this
+// text becomes trusted model context, so hidden unicode or control characters
+// in an advisory summary would be a second-order prompt-injection vector.
 func renderForAgent(r verdict.Result) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s — %s@%s", r.VerdictStr, r.Name, r.Version)
+	fmt.Fprintf(&b, "%s — %s@%s", r.VerdictStr, report.Sanitize(r.Name), report.Sanitize(r.Version))
 	for _, s := range r.Signals {
 		if s.Level == verdict.LevelInfo || s.Message == "" {
 			continue
 		}
-		fmt.Fprintf(&b, "\n  - %s", s.Message)
+		fmt.Fprintf(&b, "\n  - %s", report.Sanitize(s.Message))
 	}
 	if r.Suggestion != "" {
-		fmt.Fprintf(&b, "\n  did you mean: %s", r.Suggestion)
+		fmt.Fprintf(&b, "\n  did you mean: %s", report.Sanitize(r.Suggestion))
 	}
 	switch r.Verdict {
 	case verdict.Block:

@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/httpx"
+	"github.com/tiagosilva07/zyrax-guard/internal/seam"
+	"slices"
 )
 
 func newTestProvider(t *testing.T, h http.Handler) *Provider {
@@ -129,4 +131,70 @@ func npmTarGz(t *testing.T) []byte {
 	tw.Close()
 	gz.Close()
 	return buf.Bytes()
+}
+
+func TestInstallArgsPinsVettedVersion(t *testing.T) {
+	p := New(nil, nil)
+	args, err := p.installArgs(
+		[]seam.InstallRef{{Name: "lodash", Version: "4.17.20"}, {Name: "axios"}},
+		seam.InstallOpts{IgnoreScripts: true},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"install", "--ignore-scripts", "lodash@4.17.20", "axios"}
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %v, want %v", args, want)
+	}
+	if _, err := p.installArgs([]seam.InstallRef{{Name: "x", Version: "--evil"}}, seam.InstallOpts{}); err == nil {
+		t.Error("flag-shaped version must be rejected before exec")
+	}
+	if _, err := p.installArgs([]seam.InstallRef{{Name: "not a name!"}}, seam.InstallOpts{}); err == nil {
+		t.Error("illegal name must be rejected before exec")
+	}
+}
+
+func TestMetadataStatsFailureMarksLoadsUnknown(t *testing.T) {
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/point/last-week/") {
+			w.WriteHeader(500) // stats API down — must not read as "0 downloads"
+			return
+		}
+		w.Write([]byte(`{"time":{"created":"2010-01-01T00:00:00Z"},"dist-tags":{"latest":"4.19.2"}}`))
+	}))
+	md, err := p.Metadata(context.Background(), "express")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md.LoadsKnown {
+		t.Error("LoadsKnown must be false when the stats endpoint fails")
+	}
+}
+
+func TestMetadataStatsSuccessMarksLoadsKnown(t *testing.T) {
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/point/last-week/") {
+			w.Write([]byte(`{"downloads":123}`))
+			return
+		}
+		w.Write([]byte(`{"time":{"created":"2010-01-01T00:00:00Z"},"dist-tags":{"latest":"4.19.2"}}`))
+	}))
+	md, err := p.Metadata(context.Background(), "express")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !md.LoadsKnown || md.WeeklyLoads != 123 {
+		t.Errorf("want LoadsKnown=true WeeklyLoads=123, got %+v", md)
+	}
+}
+
+func TestInstallCodeRegistryFailureIsError(t *testing.T) {
+	// A 5xx during --deep must surface as an error (rendered as "could not fetch
+	// artifact"), never silently degrade to "no install scripts found".
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	if _, err := p.InstallCode(context.Background(), "express", "1.0.0"); err == nil {
+		t.Fatal("registry 5xx must return an error, got nil")
+	}
 }

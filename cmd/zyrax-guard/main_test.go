@@ -221,3 +221,65 @@ func TestAllowAcceptsEcosystemFlag(t *testing.T) {
 		t.Fatalf("allow --ecosystem bogus exit=%d want 2", code)
 	}
 }
+
+func TestSubcommandHelpExitsZero(t *testing.T) {
+	// `--help` is a successful outcome, not a usage error: scripts and users
+	// probing flags must get exit 0, matching Unix convention.
+	for _, cmd := range []string{"check", "install", "allow", "scan", "scan-agents", "upgrade"} {
+		if code := run([]string{cmd, "--help"}); code != 0 {
+			t.Errorf("%s --help exit=%d want 0", cmd, code)
+		}
+	}
+}
+
+func TestUsageDocumentsExitCodes(t *testing.T) {
+	// CI users gate on exit codes; usage() must spell them out — including that
+	// ERROR (could-not-verify) fails closed regardless of --strict.
+	u := usage()
+	for _, want := range []string{"exit codes", "BLOCK", "ERROR", "ZYRAX_NO_UPDATE_CHECK"} {
+		if !strings.Contains(u, want) {
+			t.Errorf("usage() missing %q", want)
+		}
+	}
+}
+
+func captureStderr(t *testing.T, fn func() int) string {
+	t.Helper()
+	old := os.Stderr
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = w
+	fn()
+	_ = w.Close()
+	os.Stderr = old
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatal(err)
+	}
+	return buf.String()
+}
+
+func TestInstallSupportsJSONOutput(t *testing.T) {
+	// check/scan/scan-agents all have --json; install must too (CI parity).
+	help := captureStderr(t, func() int { return run([]string{"install", "--help"}) })
+	if !strings.Contains(help, "json") {
+		t.Errorf("install --help must document a --json flag, got:\n%s", help)
+	}
+}
+
+func TestScanPypiFallsBackToRequirementsTxt(t *testing.T) {
+	// pip-tools projects have requirements.txt but no poetry.lock; when --head is
+	// unset the pypi default must fall back instead of erroring on poetry.lock.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("# no deps\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	os.Chdir(dir)
+	if code := run([]string{"scan", "--ecosystem", "pypi"}); code != 0 {
+		t.Fatalf("scan --ecosystem pypi with only requirements.txt exit=%d want 0", code)
+	}
+}

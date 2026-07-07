@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/httpx"
+	"github.com/tiagosilva07/zyrax-guard/internal/seam"
+	"slices"
 )
 
 func newTestProvider(t *testing.T, h http.Handler) *Provider {
@@ -185,4 +187,28 @@ func pyTarGzNamed(t *testing.T, name, body string) []byte {
 	tw.Close()
 	gz.Close()
 	return buf.Bytes()
+}
+
+func TestInstallArgsPinsVettedVersion(t *testing.T) {
+	p := New(nil, nil)
+	args, err := p.installArgs([]seam.InstallRef{{Name: "flask", Version: "3.0.0"}, {Name: "requests"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"install", "flask==3.0.0", "requests"}
+	if !slices.Equal(args, want) {
+		t.Errorf("args = %v, want %v", args, want)
+	}
+	if _, err := p.installArgs([]seam.InstallRef{{Name: "x", Version: "--evil"}}); err == nil {
+		t.Error("flag-shaped version must be rejected before exec")
+	}
+}
+
+func TestInstallCodeRegistryFailureIsError(t *testing.T) {
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	if _, err := p.InstallCode(context.Background(), "flask", "1.0.0"); err == nil {
+		t.Fatal("registry 5xx must return an error, got nil")
+	}
 }

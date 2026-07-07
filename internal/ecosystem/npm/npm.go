@@ -108,8 +108,9 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		md.Maintainers = append(md.Maintainers, m.Name)
 	}
 	var dl downloadsPoint
-	if _, err := p.http.GetJSON(ctx, p.downloadsBase+"/downloads/point/last-week/"+name, &dl); err == nil {
+	if code, err := p.http.GetJSON(ctx, p.downloadsBase+"/downloads/point/last-week/"+name, &dl); err == nil && code == 200 {
 		md.WeeklyLoads = dl.Downloads
+		md.LoadsKnown = true
 	}
 	return md, nil
 }
@@ -131,8 +132,16 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	}
 	var pk tarballPackument
 	code, err := p.http.GetJSON(ctx, p.registryBase+"/"+name, &pk)
-	if err != nil || code != 200 {
+	if err != nil {
 		return nil, err
+	}
+	if code == 404 {
+		return map[string]string{}, nil // no such package/version → nothing to inspect
+	}
+	if code != 200 {
+		// Must be an error, not an empty map — a registry 5xx during --deep would
+		// otherwise silently read as "no install scripts found".
+		return nil, fmt.Errorf("npm registry returned %d for %s", code, name)
 	}
 	if version == "" {
 		version = pk.DistTags["latest"]
@@ -148,19 +157,36 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	return artifact.ExtractTarGz(b, artifact.DefaultLimits())
 }
 
-// Install runs the real `npm install`, passing names as ARGUMENT ARRAY entries.
-// Names are re-validated here as defense in depth — they never touch a shell.
-func (p *Provider) Install(ctx context.Context, names []string, opts seam.InstallOpts) error {
-	for _, n := range names {
-		if err := p.ValidateName(n); err != nil {
-			return err
-		}
-	}
+// installArgs builds the `npm` argument array. Names and versions are
+// re-validated here as defense in depth — they never touch a shell, and a
+// pinned version installs exactly the artifact that was vetted.
+func (p *Provider) installArgs(pkgs []seam.InstallRef, opts seam.InstallOpts) ([]string, error) {
 	args := []string{"install"}
 	if opts.IgnoreScripts {
 		args = append(args, "--ignore-scripts")
 	}
-	args = append(args, names...)
+	for _, pkg := range pkgs {
+		if err := p.ValidateName(pkg.Name); err != nil {
+			return nil, err
+		}
+		if err := seam.ValidateVersion(pkg.Version); err != nil {
+			return nil, err
+		}
+		spec := pkg.Name
+		if pkg.Version != "" {
+			spec += "@" + pkg.Version
+		}
+		args = append(args, spec)
+	}
+	return args, nil
+}
+
+// Install runs the real `npm install`, passing packages as ARGUMENT ARRAY entries.
+func (p *Provider) Install(ctx context.Context, pkgs []seam.InstallRef, opts seam.InstallOpts) error {
+	args, err := p.installArgs(pkgs, opts)
+	if err != nil {
+		return err
+	}
 	cmd := exec.CommandContext(ctx, "npm", args...) // arg array — no shell
 	cmd.Stdout, cmd.Stderr = stdout(), stderr()
 	return cmd.Run()

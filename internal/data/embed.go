@@ -36,3 +36,14 @@ func PopularCrates() []string {
 	_ = json.Unmarshal(popularCratesRaw, &out)
 	return out
 }
+
+//go:embed denylist.json
+var denylistRaw []byte
+
+// Denylist returns the bundled known-malicious names per ecosystem. Kept as a
+// data file (not Go source) so the list can grow via data-only PRs.
+func Denylist() map[string][]string {
+	var out map[string][]string
+	_ = json.Unmarshal(denylistRaw, &out)
+	return out
+}
