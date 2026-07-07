@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -32,7 +33,7 @@ func usage() string {
 
 usage:
   zyrax-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict] [--deep]
-  zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep]
+  zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep] [--json]
   zyrax-guard allow [--ecosystem npm|pypi|crates] <name>
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
@@ -42,7 +43,28 @@ usage:
   zyrax-guard upgrade [--require-signature=false]           (update Guard to the latest release)
   zyrax-guard version [--check]
   zyrax-guard --version
+
+exit codes:
+  0  SAFE or WARN (package commands) · no CRITICAL/HIGH finding (scan-agents)
+  1  BLOCK — or WARN with --strict; ERROR (could not verify — fails closed) always exits 1
+  2  usage error (unknown command, bad flag, invalid ecosystem)
+
+environment:
+  ZYRAX_NO_UPDATE_CHECK=1   disable the daily update check
 `
+}
+
+// parseExit maps a FlagSet parse result to an exit code. -1 means parsed OK;
+// --help is a successful outcome (0), not a usage error (2).
+func parseExit(err error) int {
+	switch {
+	case err == nil:
+		return -1
+	case errors.Is(err, flag.ErrHelp):
+		return 0
+	default:
+		return 2
+	}
 }
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -134,8 +156,8 @@ func cmdUpgrade(args []string) int {
 	// release as the binary, so checksum-only cannot detect a compromised
 	// release — only the cosign identity check can. Opting out is explicit.
 	requireSig := fs.Bool("require-signature", true, "verify the cosign signature before replacing the binary (pass --require-signature=false to accept checksum-only when cosign is not installed)")
-	if err := fs.Parse(reorderFlagsFirst(args, "method")); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "method"))); c >= 0 {
+		return c
 	}
 	m := selfupdate.Method(*method)
 	if *method != "" {
@@ -255,8 +277,8 @@ func cmdCheck(args []string) int {
 	strict := fs.Bool("strict", false, "treat WARN as failure")
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
 	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
-	if err := fs.Parse(reorderFlagsFirst(args, "ecosystem")); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem"))); c >= 0 {
+		return c
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprint(os.Stderr, usage())
@@ -277,12 +299,13 @@ func cmdCheck(args []string) int {
 
 func cmdInstall(args []string) int {
 	fs := flag.NewFlagSet("install", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "JSON output")
 	ignoreScripts := fs.Bool("ignore-scripts", false, "pass --ignore-scripts to npm")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
 	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
-	if err := fs.Parse(reorderFlagsFirst(args, "ecosystem")); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem"))); c >= 0 {
+		return c
 	}
 	names := fs.Args()
 	if len(names) == 0 {
@@ -309,7 +332,7 @@ func cmdInstall(args []string) int {
 			worst = c
 		}
 	}
-	reporterFor(false, false).Report(results)
+	reporterFor(*asJSON, false).Report(results)
 	if worst != 0 {
 		fmt.Fprintln(os.Stderr, "blocked — not installing. Override with: zyrax-guard allow <name>")
 		return worst
@@ -324,8 +347,8 @@ func cmdInstall(args []string) int {
 func cmdAllow(args []string) int {
 	fs := flag.NewFlagSet("allow", flag.ContinueOnError)
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
-	if err := fs.Parse(reorderFlagsFirst(args, "ecosystem")); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem"))); c >= 0 {
+		return c
 	}
 	if fs.NArg() != 1 {
 		fmt.Fprint(os.Stderr, usage())
@@ -362,8 +385,8 @@ func cmdScan(args []string) int {
 	strict := fs.Bool("strict", false, "treat WARN as failure")
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
 	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "base", "head", "ecosystem"))); c >= 0 {
+		return c
 	}
 	// Validate ecosystem early (before any file I/O).
 	validEco := map[string]bool{"npm": true, "pypi": true, "crates": true}
@@ -373,6 +396,15 @@ func cmdScan(args []string) int {
 	}
 	// Pick per-ecosystem default head path when the flag still holds the npm default.
 	defaultHead := map[string]string{"npm": "package-lock.json", "crates": "Cargo.lock", "pypi": "poetry.lock"}
+	// pip-tools projects have requirements.txt but no poetry.lock — fall back
+	// when the pypi default is absent and --head was not given explicitly.
+	if *eco == "pypi" && *headPath == "package-lock.json" {
+		if _, err := os.Stat("poetry.lock"); os.IsNotExist(err) {
+			if _, err := os.Stat("requirements.txt"); err == nil {
+				defaultHead["pypi"] = "requirements.txt"
+			}
+		}
+	}
 	if *headPath == "package-lock.json" {
 		if h, ok := defaultHead[*eco]; ok {
 			*headPath = h
@@ -478,8 +510,8 @@ func cmdMCPInstall(args []string) int {
 	global := fs.Bool("global", false, "register globally via the client CLI (Claude Code)")
 	command := fs.String("command", "", "override registered command: binary|npx")
 	client := fs.String("client", "claude", "global client (only 'claude' supported)")
-	if err := fs.Parse(reorderFlagsFirst(args, "command", "client")); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "command", "client"))); c >= 0 {
+		return c
 	}
 	if *command != "" && *command != "binary" && *command != "npx" {
 		fmt.Fprintf(os.Stderr, "invalid --command %q (want binary|npx)\n", *command)
@@ -553,8 +585,8 @@ func cmdScanAgents(args []string) int {
 	asJSON := fs.Bool("json", false, "JSON output")
 	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "exit 1 for any finding (default: exit 1 for CRITICAL/HIGH only)")
-	if err := fs.Parse(reorderFlagsFirst(args)); err != nil {
-		return 2
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args))); c >= 0 {
+		return c
 	}
 	dir := "."
 	if fs.NArg() > 0 {
