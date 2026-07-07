@@ -429,11 +429,12 @@ policy file — no config file or environment variables required.
 | `--ecosystem npm\|pypi\|crates` | check, install, scan | `npm` | Target package ecosystem |
 | `--strict` | check, install, scan, scan-agents | off | Tighten failure: WARN → fail (package commands); any finding → fail (`scan-agents`) |
 | `--deep` | check, install, scan | off | Download + statically analyze install/build scripts |
-| `--json` | check, scan, scan-agents | off | JSON output |
+| `--json` | check, install, scan, scan-agents | off | JSON output |
 | `--sarif` | check, scan | off | SARIF 2.1.0 output (for code-scanning ingestion) |
 | `--ignore-scripts` | install | off | Pass `--ignore-scripts` through to npm |
 | `--base <file>` | scan | — | Base lockfile to diff against (scan only added/changed deps) |
-| `--head <file>` | scan | `package-lock.json` | Head lockfile to scan |
+| `--head <file>` | scan | per-ecosystem (`package-lock.json` / `poetry.lock`, falling back to `requirements.txt` / `Cargo.lock`) | Head lockfile to scan |
+| `--require-signature` | upgrade | **on** | Verify the cosign signature before replacing the binary; pass `--require-signature=false` to accept checksum-only |
 
 ### Local policy file
 
@@ -592,6 +593,7 @@ and audit/compliance reporting) is in development — learn more at **[zyrax.io]
 | **v0.7.0** | `scan-agents`: AI agent config audit (prompt injection, MCP hosts, permissions) + Phase 2 detections (credential access, exfiltration sinks, MCP tool-description injection) | shipped |
 | **v0.8** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | shipped |
 | **v0.9.0** | Update detection (daily opt-out notice + verified `upgrade`) + one-step `mcp install`; **production-readiness**: fail-closed `ERROR` verdict (network failure no longer bypasses the gate), retries/backoff, MCP panic recovery, cosign-verified upgrade, hardened CI (gitleaks/staticcheck/dependency-review); **agent-config detection hardening** (obfuscation-normalized matching, allowlist-style MCP/exec/perms, `zyrax-allow` suppression) | shipped |
+| **v0.10.0** | **Correctness & fail-closed hardening** from a full audit: npm-workspace lockfile support in `scan` (monorepos no longer crash), `install` installs the exact vetted `name@version`, `scan-agents` fails on a missing directory and reports unscannable (oversize/unreadable) configs, registry-derived text sanitized against terminal-escape/prompt injection, unknown download stats no longer read as "0" (no false typosquat BLOCKs), wall-clock budgets on every check entry point, **signature-verified `upgrade` by default**, `--help` exits 0 + documented exit codes, `install --json` | shipped |
 | **exploring** | Semantic detection layer (LLM/heuristic judge for paraphrased/non-English prompt injection) as a Zyrax-platform capability; community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
