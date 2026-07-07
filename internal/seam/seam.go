@@ -16,6 +16,7 @@ import (
 type Metadata struct {
 	Published   time.Time
 	WeeklyLoads int
+	LoadsKnown  bool     // false = the stats endpoint failed; WeeklyLoads is unknown, NOT zero
 	Maintainers []string // stable identifiers (e.g. npm usernames)
 	RepoURL     string
 	Exists      bool

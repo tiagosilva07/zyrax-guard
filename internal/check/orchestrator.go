@@ -45,12 +45,24 @@ func (o *Orchestrator) CheckWith(ctx context.Context, name, version string, deep
 	if !exists {
 		return verdict.Decide(o.Eco.Name(), name, version, signals)
 	}
-	md, _ := o.Eco.Metadata(ctx, name)
+	md, mdErr := o.Eco.Metadata(ctx, name)
 	if version == "" {
 		version = md.Latest // check the version a bare install would actually pull
 	}
-	signals = append(signals, Typosquat(name, md.WeeklyLoads, o.Eco.PopularList()))
-	signals = append(signals, Popularity(md))
+	switch {
+	case mdErr != nil:
+		// Fail closed like the other registry paths — but keep going so the
+		// denylist/OSV lookup can still escalate to BLOCK.
+		signals = append(signals, verdict.Signal{Check: verdict.RuleCheckError, Level: verdict.LevelError, Message: "could not fetch registry metadata: " + mdErr.Error()})
+	case !md.LoadsKnown:
+		// The stats endpoint failed: WeeklyLoads is unknown, not zero. Running
+		// typosquat/popularity would manufacture "0 weekly downloads" evidence
+		// and false-BLOCK legitimate packages, so skip them — visibly.
+		signals = append(signals, verdict.Signal{Check: verdict.RuleCheckError, Level: verdict.LevelInfo, Message: "download statistics unavailable — typosquat and popularity checks skipped"})
+	default:
+		signals = append(signals, Typosquat(name, md.WeeklyLoads, o.Eco.PopularList()))
+		signals = append(signals, Popularity(md))
+	}
 	advs, lookupErr := o.Intel.Lookup(ctx, o.Eco.Name(), name, version)
 	if len(advs) > 0 {
 		signals = append(signals, KnownBad(advs)) // denylist/OSV hits (BLOCK dominates ERROR)
