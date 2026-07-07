@@ -28,7 +28,7 @@ Scanning . for agent config files...
 
 $ zyrax-guard check lodahs
 ✗ lodahs@0.0.1-security — BLOCK
-  - name is similar to "lodash" — double-check you meant this package
+  - looks like a typo of "lodash" (far more popular); this name has only 46 weekly downloads
   - MAL-2025-25502: Malicious code in lodahs (npm)
   did you mean: lodash
   to override:  zyrax-guard allow lodahs
@@ -360,7 +360,7 @@ Guard runs against public registry metadata only — no local execution, no inst
 |---|---|
 | **Existence** | Package not found on the registry → **BLOCK** (hallucinated or trap name) |
 | **Typosquat** | Name is 1 edit away from a far-more-popular package AND has near-zero downloads → **BLOCK** with a "did you mean" suggestion |
-| **Known-bad** | OSV advisory match → malware / high-severity → **BLOCK**; low-severity → **WARN** |
+| **Known-bad** | OSV advisory match → known-malicious package → **BLOCK**; vulnerability in a legitimate package (any severity, shown in the message) → **WARN** (use `--strict` to fail on it) |
 | **Age & popularity** | Published < 30 days AND < 50 weekly downloads → **WARN** |
 | **Lockfile integrity** | *(scan only)* Resolved URL or integrity hash changed → **BLOCK** |
 
