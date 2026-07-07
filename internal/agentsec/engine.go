@@ -4,6 +4,7 @@ package agentsec
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -54,12 +55,20 @@ func ScanDir(root string, ignoreAllow bool) (findings []Finding, scanned []strin
 	rel := make([]string, len(files))
 	for i, f := range files {
 		rel[i], _ = filepath.Rel(root, f)
-		fi, statErr := os.Stat(f)
-		if statErr != nil || fi.Size() > maxFileSizeBytes {
-			continue
-		}
-		content, readErr := os.ReadFile(f)
+		content, readErr := readCapped(f)
 		if readErr != nil {
+			// A config that cannot be scanned must be reported, not silently
+			// skipped — padding a file past the size cap would otherwise be a
+			// trivial scanner-evasion vector.
+			all = append(all, Finding{
+				RuleID:      "agent-config/unscannable",
+				Severity:    "MEDIUM",
+				FilePath:    rel[i],
+				Message:     "Agent config '" + sanitizeExcerpt(filepath.Base(f)) + "' could not be scanned: " + sanitizeExcerpt(readErr.Error()),
+				Description: "Files that cannot be read or exceed the scan size limit are not analyzed. Their content may hide malicious instructions.",
+				Remediation: "Inspect the file manually, or reduce it below the size limit so it can be scanned.",
+				Confidence:  0.90,
+			})
 			continue
 		}
 		var fileFindings []Finding
@@ -79,6 +88,25 @@ func ScanDir(root string, ignoreAllow bool) (findings []Finding, scanned []strin
 	// context, so they are never suppressed.
 	all = append(all, findSymlinkedConfigs(root)...)
 	return all, rel, suppressed, nil
+}
+
+// readCapped reads f up to maxFileSizeBytes. The cap is enforced on the read
+// itself (not a prior stat), so a file that grows between check and read
+// cannot bypass the limit.
+func readCapped(f string) ([]byte, error) {
+	h, err := os.Open(f)
+	if err != nil {
+		return nil, err
+	}
+	defer h.Close()
+	content, err := io.ReadAll(io.LimitReader(h, maxFileSizeBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(content)) > maxFileSizeBytes {
+		return nil, fmt.Errorf("file exceeds the %d MB scan limit", maxFileSizeBytes/(1024*1024))
+	}
+	return content, nil
 }
 
 // SeverityOrder lists severities from most to least critical.
