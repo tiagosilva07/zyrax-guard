@@ -68,6 +68,33 @@ func TestParseLockAdded(t *testing.T) {
 	}
 }
 
+func TestParseLockWorkspaceEntries(t *testing.T) {
+	// npm workspace lockfiles (lockfileVersion 2/3) contain entries whose path has
+	// no "node_modules/" prefix — the local workspace packages themselves, e.g.
+	// "apps/web". These are not registry dependencies: they must be skipped, not
+	// mis-sliced (short paths used to panic; longer ones produced garbage names).
+	lock := `{"packages":{
+		"": {"version":"0.0.1"},
+		"a": {"version":"1.0.0"},
+		"apps/web": {"version":"0.1.0"},
+		"node_modules/lodash": {"version":"4.17.21","resolved":"https://r/lodash","integrity":"sha-L"},
+		"apps/web/node_modules/left-pad": {"version":"1.3.0","resolved":"https://r/left-pad","integrity":"sha-P"}
+	}}`
+	m, err := parseLock([]byte(lock))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 2 {
+		t.Fatalf("want 2 registry deps, got %d: %+v", len(m), m)
+	}
+	if m["lodash"].Version != "4.17.21" {
+		t.Errorf("lodash: %+v", m["lodash"])
+	}
+	if m["left-pad"].Version != "1.3.0" {
+		t.Errorf("left-pad (nested workspace dep): %+v", m["left-pad"])
+	}
+}
+
 func TestLockIntegrityChanged(t *testing.T) {
 	base := `{"packages":{"node_modules/a":{"version":"1.0.0","resolved":"https://r/a","integrity":"sha-A"}}}`
 	head := `{"packages":{"node_modules/a":{"version":"1.0.0","resolved":"https://EVIL/a","integrity":"sha-X"}}}`
