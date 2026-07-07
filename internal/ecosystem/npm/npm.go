@@ -108,8 +108,9 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		md.Maintainers = append(md.Maintainers, m.Name)
 	}
 	var dl downloadsPoint
-	if _, err := p.http.GetJSON(ctx, p.downloadsBase+"/downloads/point/last-week/"+name, &dl); err == nil {
+	if code, err := p.http.GetJSON(ctx, p.downloadsBase+"/downloads/point/last-week/"+name, &dl); err == nil && code == 200 {
 		md.WeeklyLoads = dl.Downloads
+		md.LoadsKnown = true
 	}
 	return md, nil
 }
@@ -131,8 +132,16 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	}
 	var pk tarballPackument
 	code, err := p.http.GetJSON(ctx, p.registryBase+"/"+name, &pk)
-	if err != nil || code != 200 {
+	if err != nil {
 		return nil, err
+	}
+	if code == 404 {
+		return map[string]string{}, nil // no such package/version → nothing to inspect
+	}
+	if code != 200 {
+		// Must be an error, not an empty map — a registry 5xx during --deep would
+		// otherwise silently read as "no install scripts found".
+		return nil, fmt.Errorf("npm registry returned %d for %s", code, name)
 	}
 	if version == "" {
 		version = pk.DistTags["latest"]

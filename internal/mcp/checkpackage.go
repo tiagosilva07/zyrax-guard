@@ -7,10 +7,18 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/tiagosilva07/zyrax-guard/internal/agentsec"
 	"github.com/tiagosilva07/zyrax-guard/internal/report"
 	"github.com/tiagosilva07/zyrax-guard/internal/verdict"
+)
+
+// Per-call wall-clock budgets. checkTimeout comfortably covers the retried
+// registry+OSV lookups; deepCheckTimeout matches the `scan --deep` budget.
+const (
+	checkTimeout     = 60 * time.Second
+	deepCheckTimeout = 3 * time.Minute
 )
 
 func checkPackageTool() map[string]any {
@@ -79,7 +87,15 @@ func (s *Server) callCheckPackage(raw json.RawMessage) map[string]any {
 	if err != nil {
 		return toolError(err.Error())
 	}
-	res := checker.CheckWith(context.Background(), args.Name, args.Version, args.Deep)
+	// Wall-clock budget so a slow registry cannot stall the agent's tool call;
+	// deep checks download and analyze the artifact, so they get more headroom.
+	budget := checkTimeout
+	if args.Deep {
+		budget = deepCheckTimeout
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), budget)
+	defer cancel()
+	res := checker.CheckWith(ctx, args.Name, args.Version, args.Deep)
 	structured, _ := json.Marshal(res)
 	text := renderForAgent(res) + "\n\n" + string(structured)
 	return map[string]any{

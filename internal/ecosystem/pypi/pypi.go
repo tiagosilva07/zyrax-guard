@@ -112,8 +112,9 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		md.Published = rels[0].UploadTime
 	}
 	var s statsJSON
-	if _, err := p.http.GetJSON(ctx, p.statsBase+"/api/packages/"+n+"/recent", &s); err == nil {
+	if code, err := p.http.GetJSON(ctx, p.statsBase+"/api/packages/"+n+"/recent", &s); err == nil && code == 200 {
 		md.WeeklyLoads = s.Data.LastWeek
+		md.LoadsKnown = true
 	}
 	return md, nil
 }
@@ -155,8 +156,13 @@ func (p *Provider) InstallCode(ctx context.Context, name, version string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if code != 200 {
+	if code == 404 {
 		return map[string]string{}, nil // not found / no such release → nothing to inspect
+	}
+	if code != 200 {
+		// Must be an error, not an empty map — a registry 5xx during --deep would
+		// otherwise silently read as "no install scripts found".
+		return nil, fmt.Errorf("pypi registry returned %d for %s", code, name)
 	}
 	var sdist string
 	for _, x := range u.URLs {

@@ -93,6 +93,7 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		Latest:      latest,
 		RepoURL:     j.Crate.Repository,
 		WeeklyLoads: j.Crate.RecentDownloads,
+		LoadsKnown:  true, // crates.io ships downloads in the same response
 		Published:   j.Crate.CreatedAt,
 	}, nil
 }

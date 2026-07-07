@@ -144,3 +144,12 @@ func TestInstallArgsPinsVettedVersion(t *testing.T) {
 		t.Error("flag-shaped version must be rejected before exec")
 	}
 }
+
+func TestInstallCodeRegistryFailureIsError(t *testing.T) {
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(500)
+	}))
+	if _, err := p.InstallCode(context.Background(), "serde", "1.0.0"); err == nil {
+		t.Fatal("registry 5xx must return an error, got nil")
+	}
+}

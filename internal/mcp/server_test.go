@@ -246,3 +246,21 @@ func TestRenderForAgentSanitizesSignalMessages(t *testing.T) {
 		t.Errorf("verdict recommendation missing: %q", out)
 	}
 }
+
+func TestCheckPackageToolCallHasDeadline(t *testing.T) {
+	// A slow registry must not stall the agent's tool call indefinitely — every
+	// check_package invocation gets a wall-clock budget like `scan --deep` has.
+	var hasDeadline bool
+	srv := &Server{Version: "test", Resolve: func(string) (Checker, error) {
+		return checkFn(func(ctx context.Context, _, _ string, _ bool) verdict.Result {
+			_, hasDeadline = ctx.Deadline()
+			return verdict.Result{Verdict: verdict.Safe, VerdictStr: "SAFE"}
+		}), nil
+	}}
+	var out strings.Builder
+	in := strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"check_package","arguments":{"name":"x"}}}` + "\n")
+	srv.Serve(in, &out)
+	if !hasDeadline {
+		t.Error("check_package must run under a context deadline")
+	}
+}

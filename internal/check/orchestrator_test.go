@@ -3,6 +3,7 @@ package check
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ type stubEco struct {
 	exists    bool
 	existsErr error
 	md        seam.Metadata
+	mdErr     error
 	pop       []string
 	code      map[string]string
 	codeErr   error
@@ -22,7 +24,7 @@ type stubEco struct {
 func (s stubEco) Name() string                                                       { return "npm" }
 func (s stubEco) ValidateName(string) error                                          { return nil }
 func (s stubEco) Exists(context.Context, string, string) (bool, error)               { return s.exists, s.existsErr }
-func (s stubEco) Metadata(context.Context, string) (seam.Metadata, error)            { return s.md, nil }
+func (s stubEco) Metadata(context.Context, string) (seam.Metadata, error)            { return s.md, s.mdErr }
 func (s stubEco) PopularList() []string                                              { return s.pop }
 func (s stubEco) Install(context.Context, []seam.InstallRef, seam.InstallOpts) error { return nil }
 func (s stubEco) InstallCode(context.Context, string, string) (map[string]string, error) {
@@ -50,7 +52,7 @@ func (s stubPolicy) Decide(string) seam.Decision { return s.d }
 func (s stubPolicy) Allow(string) error          { return nil }
 
 func TestOrchestrator(t *testing.T) {
-	old := seam.Metadata{Exists: true, Published: time.Now().AddDate(-5, 0, 0), WeeklyLoads: 9_000_000, Latest: "4.19.2"}
+	old := seam.Metadata{Exists: true, Published: time.Now().AddDate(-5, 0, 0), WeeklyLoads: 9_000_000, LoadsKnown: true, Latest: "4.19.2"}
 	o := &Orchestrator{
 		Eco:    stubEco{exists: true, md: old, pop: []string{"express"}},
 		Intel:  stubIntel{},
@@ -65,7 +67,7 @@ func TestOrchestrator(t *testing.T) {
 		t.Errorf("r.Version = %q, want 4.19.2 (resolved from Latest)", r.Version)
 	}
 	// typosquat: reqeust with near-zero downloads
-	o.Eco = stubEco{exists: true, md: seam.Metadata{Exists: true, WeeklyLoads: 2, Published: time.Now()}, pop: []string{"express", "request"}}
+	o.Eco = stubEco{exists: true, md: seam.Metadata{Exists: true, WeeklyLoads: 2, LoadsKnown: true, Published: time.Now()}, pop: []string{"express", "request"}}
 	r = o.Check(context.Background(), "reqeust", "")
 	if r.Verdict != verdict.Block || r.Suggestion != "request" {
 		t.Errorf("typosquat should BLOCK+suggest, got %v %q", r.Verdict, r.Suggestion)
@@ -131,6 +133,56 @@ func TestCheckWithDeep(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("InstallCode error should produce an Info signal, got %+v", r.Signals)
+	}
+}
+
+func TestCheck_MetadataErrorFailsClosed(t *testing.T) {
+	o := &Orchestrator{
+		Eco:    stubEco{exists: true, mdErr: errors.New("registry 500")},
+		Intel:  stubIntel{},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	r := o.Check(context.Background(), "pkg", "")
+	if r.Verdict != verdict.Error {
+		t.Fatalf("metadata fetch failure must be ERROR (fail closed), got %s (%+v)", r.VerdictStr, r.Signals)
+	}
+}
+
+func TestCheck_MetadataErrorButDenylistStillBlocks(t *testing.T) {
+	o := &Orchestrator{
+		Eco:    stubEco{exists: true, mdErr: errors.New("registry 500")},
+		Intel:  stubIntel{advs: []seam.Advisory{{ID: "denylist", Severity: "critical", Malware: true}}},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	if r := o.Check(context.Background(), "pkg", ""); r.Verdict != verdict.Block {
+		t.Fatalf("denylist malware must BLOCK even when metadata fails, got %s", r.VerdictStr)
+	}
+}
+
+func TestCheck_UnknownDownloadsMustNotFalseBlock(t *testing.T) {
+	// Stats API down: WeeklyLoads is unknown, NOT zero. A name one edit from a
+	// popular package must not BLOCK on "0 weekly downloads" evidence that was
+	// never actually observed. The skip must be visible as a signal.
+	o := &Orchestrator{
+		Eco: stubEco{exists: true, md: seam.Metadata{
+			Exists: true, WeeklyLoads: 0, LoadsKnown: false,
+			Published: time.Now().AddDate(-3, 0, 0), Latest: "1.0.0",
+		}, pop: []string{"express", "request"}},
+		Intel:  stubIntel{},
+		Policy: stubPolicy{d: seam.Defer},
+	}
+	r := o.Check(context.Background(), "reqeust", "")
+	if r.Verdict == verdict.Block {
+		t.Fatalf("must not BLOCK on unknown download stats, got %s (%+v)", r.VerdictStr, r.Signals)
+	}
+	found := false
+	for _, s := range r.Signals {
+		if strings.Contains(s.Message, "download statistics unavailable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("skipping typosquat/popularity must be visible as a signal, got %+v", r.Signals)
 	}
 }
 

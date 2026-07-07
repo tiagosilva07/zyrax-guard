@@ -39,7 +39,7 @@ usage:
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
   zyrax-guard mcp install [--global] [--command binary|npx]  (register Guard with your agent)
   zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
-  zyrax-guard upgrade [--require-signature]                 (update Guard to the latest release)
+  zyrax-guard upgrade [--require-signature=false]           (update Guard to the latest release)
   zyrax-guard version [--check]
   zyrax-guard --version
 `
@@ -130,7 +130,10 @@ func maybeNotify(cmd string, args []string) {
 func cmdUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
 	method := fs.String("method", "", "override install-method detection: npm|brew|go|binary")
-	requireSig := fs.Bool("require-signature", false, "abort upgrade if cosign is not installed")
+	// Signature verification is the default: checksums.txt ships in the same
+	// release as the binary, so checksum-only cannot detect a compromised
+	// release — only the cosign identity check can. Opting out is explicit.
+	requireSig := fs.Bool("require-signature", true, "verify the cosign signature before replacing the binary (pass --require-signature=false to accept checksum-only when cosign is not installed)")
 	if err := fs.Parse(reorderFlagsFirst(args, "method")); err != nil {
 		return 2
 	}
@@ -233,6 +236,18 @@ func exitForVerdict(v string, strict bool) int {
 	}
 }
 
+// checkContext returns a per-package wall-clock budget so a slow registry
+// cannot stall a check indefinitely (mirrors the MCP server's budgets; the
+// install exec itself stays unbounded — package managers can legitimately
+// take minutes).
+func checkContext(deep bool) (context.Context, context.CancelFunc) {
+	budget := 60 * time.Second
+	if deep {
+		budget = 3 * time.Minute
+	}
+	return context.WithTimeout(context.Background(), budget)
+}
+
 func cmdCheck(args []string) int {
 	fs := flag.NewFlagSet("check", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "JSON output")
@@ -253,7 +268,9 @@ func cmdCheck(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
-	res := orch.CheckWith(context.Background(), name, ver, *deep)
+	ctx, cancel := checkContext(*deep)
+	defer cancel()
+	res := orch.CheckWith(ctx, name, ver, *deep)
 	reporterFor(*asJSON, *asSARIF).Report([]verdict.Result{res})
 	return exitForVerdict(res.VerdictStr, *strict)
 }
@@ -282,7 +299,9 @@ func cmdInstall(args []string) int {
 	worst := 0
 	for _, raw := range names {
 		n, v := splitNameVersion(raw)
-		r := orch.CheckWith(context.Background(), n, v, *deep)
+		ctx, cancel := checkContext(*deep)
+		r := orch.CheckWith(ctx, n, v, *deep)
+		cancel()
 		results = append(results, r)
 		// Install the exact name@version that was vetted — never re-resolve.
 		refs = append(refs, seam.InstallRef{Name: n, Version: v})
