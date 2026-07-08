@@ -57,7 +57,11 @@ func verifySHA256(data []byte, checksums, filename string) error {
 // DetectInstall guesses the install method from the resolved executable path.
 // gobin is $GOPATH/bin or $HOME/go/bin (pass "" to skip the go heuristic).
 func DetectInstall(execPath, gobin string) Method {
-	p := filepath.ToSlash(execPath)
+	// Normalize both separators explicitly: filepath.ToSlash only converts
+	// backslashes on Windows, but Windows-style paths must detect the same
+	// way everywhere (tests run on Linux CI; backslashes never appear in
+	// real Unix exec paths).
+	p := strings.ReplaceAll(execPath, `\`, "/")
 	switch {
 	case strings.Contains(p, "/node_modules/"):
 		return MethodNPM
