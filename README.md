@@ -42,6 +42,7 @@ phones home except the public package name you are querying.
 ```bash
 npx zyrax-guard@latest scan-agents .            # no install — audit this repo's agent configs
 brew install tiagosilva07/zyrax/zyrax-guard     # macOS / Linux
+scoop bucket add zyrax https://github.com/tiagosilva07/scoop-zyrax && scoop install zyrax-guard   # Windows
 go install github.com/tiagosilva07/zyrax-guard/cmd/zyrax-guard@latest
 ```
 
@@ -72,6 +73,17 @@ brew install tiagosilva07/zyrax/zyrax-guard
 
 Installs the signed release binary (SHA-256 verified by Homebrew). Updates land via
 `brew upgrade` once a new release is published.
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add zyrax https://github.com/tiagosilva07/scoop-zyrax
+scoop install zyrax-guard
+```
+
+Installs the signed release binary (SHA-256 verified by scoop against the manifest, whose
+hashes come from the release's signed `checksums.txt`). `zyrax-guard upgrade` detects a
+scoop install and delegates to `scoop update zyrax-guard`.
 
 ### Quick install (Linux / macOS)
 
@@ -129,13 +141,14 @@ zyrax-guard upgrade          # detects how Guard was installed and updates it
 zyrax-guard version --check  # force a version check now
 ```
 
-`upgrade` delegates to your package manager (`npm`/`brew`/`go`) when Guard was installed that
-way; for `curl|sh` / standalone-binary installs on Linux/macOS it downloads the signed release,
+`upgrade` delegates to your package manager (`npm`/`brew`/`scoop`/`go`) when Guard was installed
+that way; for `curl|sh` / standalone-binary installs on Linux/macOS it downloads the signed release,
 **verifies its SHA-256 against `checksums.txt` and its keyless cosign signature before replacing
 the binary** (any mismatch aborts the upgrade). Signature verification is **required by default**
 — if `cosign` is not installed the upgrade aborts with instructions; pass
-`--require-signature=false` to accept checksum-only verification explicitly. Standalone Windows
-binaries are upgraded manually for now (the notice links to Releases).
+`--require-signature=false` to accept checksum-only verification explicitly. On Windows, install
+via [scoop](https://github.com/tiagosilva07/scoop-zyrax) to get delegated upgrades; the standalone
+Windows binary is still upgraded manually (the notice links to Releases).
 Disable the daily check with `ZYRAX_NO_UPDATE_CHECK=1`.
 
 ---
@@ -594,6 +607,7 @@ and audit/compliance reporting) is in development — learn more at **[zyrax.io]
 | **v0.8** | First-class CI surfacing for `scan-agents`: SARIF output + GitHub code-scanning upload + inline PR annotations | shipped |
 | **v0.9.0** | Update detection (daily opt-out notice + verified `upgrade`) + one-step `mcp install`; **production-readiness**: fail-closed `ERROR` verdict (network failure no longer bypasses the gate), retries/backoff, MCP panic recovery, cosign-verified upgrade, hardened CI (gitleaks/staticcheck/dependency-review); **agent-config detection hardening** (obfuscation-normalized matching, allowlist-style MCP/exec/perms, `zyrax-allow` suppression) | shipped |
 | **v0.10.0** | **Correctness & fail-closed hardening** from a full audit: npm-workspace lockfile support in `scan` (monorepos no longer crash), `install` installs the exact vetted `name@version`, `scan-agents` fails on a missing directory and reports unscannable (oversize/unreadable) configs, registry-derived text sanitized against terminal-escape/prompt injection, unknown download stats no longer read as "0" (no false typosquat BLOCKs), wall-clock budgets on every check entry point, **signature-verified `upgrade` by default**, `--help` exits 0 + documented exit codes, `install --json` | shipped |
+| **v0.11.x** | **Verdict policy: BLOCK is malware-only** (v0.11.0) — vulnerabilities in legitimate packages WARN at any severity (`--strict` to fail); **Windows scoop bucket** ([`scoop-zyrax`](https://github.com/tiagosilva07/scoop-zyrax)) + `upgrade` delegation, closing Windows upgrade parity | shipped |
 | **exploring** | Semantic detection layer (LLM/heuristic judge for paraphrased/non-English prompt injection) as a Zyrax-platform capability; community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and

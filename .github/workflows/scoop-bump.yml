@@ -1,0 +1,93 @@
+name: Bump scoop manifest
+
+# Regenerate bucket/zyrax-guard.json from the release checksums and push it to
+# the bucket repo (tiagosilva07/scoop-zyrax). Mirrors homebrew-bump.yml.
+#
+# Triggers:
+#   - workflow_run after the "Release" workflow completes (a release created by GITHUB_TOKEN
+#     does not start other workflows, so we chain off Release's completion).
+#   - workflow_dispatch to (re)bump a specific tag manually.
+#
+# GATED: needs a repo secret SCOOP_BUCKET_TOKEN — a token with contents:write on
+# tiagosilva07/scoop-zyrax (a fine-grained PAT scoped to that repo is ideal).
+# Without it the job no-ops. GITHUB_TOKEN cannot push to another repo.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to bump (e.g. v0.11.0)"
+        required: true
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Resolve tag + gate on SCOOP_BUCKET_TOKEN
+        id: gate
+        env:
+          BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          EVENT: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RUN_TAG: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -eu
+          if [ "$EVENT" = "workflow_dispatch" ]; then TAG="$INPUT_TAG"; else TAG="$RUN_TAG"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ -n "${BUCKET_TOKEN:-}" ] && [ -n "$TAG" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "SCOOP_BUCKET_TOKEN missing or tag empty (tag='$TAG') — skipping."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout (release tag)
+        if: steps.gate.outputs.enabled == 'true'
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # pin: actions/checkout@v5
+        with:
+          ref: ${{ steps.gate.outputs.tag }}
+
+      - name: Download release checksums
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist --pattern 'checksums.txt'
+
+      - name: Generate manifest
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          TAG: ${{ steps.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          node scripts/gen-scoop-manifest.mjs "${TAG#v}" dist/checksums.txt zyrax-guard.json
+
+      - name: Push manifest to bucket
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          BUCKET_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+          TAG: ${{ steps.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 "https://x-access-token:${BUCKET_TOKEN}@github.com/tiagosilva07/scoop-zyrax.git" bucket-repo
+          mkdir -p bucket-repo/bucket
+          cp zyrax-guard.json bucket-repo/bucket/zyrax-guard.json
+          cd bucket-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bucket/zyrax-guard.json
+          if git diff --cached --quiet; then
+            echo "Manifest already up to date for ${TAG#v}."
+          else
+            git commit -m "zyrax-guard ${TAG#v}"
+            git push
+          fi

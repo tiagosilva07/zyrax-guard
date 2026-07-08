@@ -151,3 +151,22 @@ func TestDefaultCosignVerifyRequireSignature(t *testing.T) {
 		t.Fatalf("best-effort must not error when cosign absent, got: %v", got2)
 	}
 }
+
+func TestUpgradeScoopDelegates(t *testing.T) {
+	var gotCmd []string
+	opts := UpgradeOptions{
+		Current: "0.10.0", Method: MethodScoop, ExecPath: `C:\Users\u\scoop\apps\zyrax-guard\current\zyrax-guard.exe`,
+		Fetch: func(context.Context) (string, error) { return "0.11.0", nil },
+		Runner: func(name string, args ...string) error {
+			gotCmd = append([]string{name}, args...)
+			return nil
+		},
+	}
+	if err := Upgrade(io.Discard, opts); err != nil {
+		t.Fatalf("Upgrade: %v", err)
+	}
+	want := "scoop update zyrax-guard"
+	if strings.Join(gotCmd, " ") != want {
+		t.Fatalf("ran %q, want %q", strings.Join(gotCmd, " "), want)
+	}
+}
