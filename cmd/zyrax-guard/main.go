@@ -151,7 +151,7 @@ func maybeNotify(cmd string, args []string) {
 
 func cmdUpgrade(args []string) int {
 	fs := flag.NewFlagSet("upgrade", flag.ContinueOnError)
-	method := fs.String("method", "", "override install-method detection: npm|brew|go|binary")
+	method := fs.String("method", "", "override install-method detection: npm|brew|go|scoop|binary")
 	// Signature verification is the default: checksums.txt ships in the same
 	// release as the binary, so checksum-only cannot detect a compromised
 	// release — only the cosign identity check can. Opting out is explicit.
@@ -162,9 +162,9 @@ func cmdUpgrade(args []string) int {
 	m := selfupdate.Method(*method)
 	if *method != "" {
 		switch m {
-		case selfupdate.MethodNPM, selfupdate.MethodBrew, selfupdate.MethodGo, selfupdate.MethodBinary:
+		case selfupdate.MethodNPM, selfupdate.MethodBrew, selfupdate.MethodGo, selfupdate.MethodScoop, selfupdate.MethodBinary:
 		default:
-			fmt.Fprintf(os.Stderr, "invalid --method %q (want npm|brew|go|binary)\n", *method)
+			fmt.Fprintf(os.Stderr, "invalid --method %q (want npm|brew|go|scoop|binary)\n", *method)
 			return 2
 		}
 	}
