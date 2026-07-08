@@ -23,6 +23,7 @@ const (
 	MethodNPM    Method = "npm"
 	MethodBrew   Method = "brew"
 	MethodGo     Method = "go"
+	MethodScoop  Method = "scoop"
 	MethodBinary Method = "binary"
 )
 
@@ -62,6 +63,8 @@ func DetectInstall(execPath, gobin string) Method {
 		return MethodNPM
 	case strings.Contains(p, "/Cellar/"):
 		return MethodBrew
+	case strings.Contains(p, "/scoop/apps/zyrax-guard/"):
+		return MethodScoop
 	case gobin != "" && strings.HasPrefix(p, filepath.ToSlash(gobin)+"/"):
 		return MethodGo
 	default:
@@ -132,6 +135,9 @@ func Upgrade(w io.Writer, opts UpgradeOptions) error {
 	case MethodGo:
 		fmt.Fprintln(w, "upgrading via go install…")
 		return opts.Runner("go", "install", "github.com/tiagosilva07/zyrax-guard/cmd/zyrax-guard@latest")
+	case MethodScoop:
+		fmt.Fprintln(w, "upgrading via scoop…")
+		return opts.Runner("scoop", "update", "zyrax-guard")
 	case MethodBinary:
 		if runtime.GOOS == "windows" {
 			fmt.Fprintf(w, "automatic upgrade is not supported for the standalone Windows binary yet.\n"+
