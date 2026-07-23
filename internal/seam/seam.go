@@ -89,7 +89,7 @@ const (
 // Policy is the allow/deny source (the local committed policy file by default).
 type Policy interface {
 	Decide(name string) Decision
-	Allow(name string) error // persist an allowlist entry
+	Allow(name, reason string) error // persist an allowlist entry; reason may be empty
 }
 
 // Reporter renders results (text, json, or sarif).
