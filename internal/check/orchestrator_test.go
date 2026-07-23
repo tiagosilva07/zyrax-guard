@@ -49,7 +49,7 @@ func (s stubIntel) Lookup(context.Context, string, string, string) ([]seam.Advis
 type stubPolicy struct{ d seam.Decision }
 
 func (s stubPolicy) Decide(string) seam.Decision { return s.d }
-func (s stubPolicy) Allow(string) error          { return nil }
+func (s stubPolicy) Allow(string, string) error  { return nil }
 
 func TestOrchestrator(t *testing.T) {
 	old := seam.Metadata{Exists: true, Published: time.Now().AddDate(-5, 0, 0), WeeklyLoads: 9_000_000, LoadsKnown: true, Latest: "4.19.2"}

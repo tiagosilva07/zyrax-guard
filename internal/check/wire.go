@@ -44,6 +44,7 @@ func New(ecosystem, projectDir string) (*Orchestrator, error) {
 		Eco:    eco,
 		Intel:  intel.NewOSV(httpx.New([]string{intel.OSVHost})),
 		Policy: pol,
+		GitHub: NewGitHubClient(httpx.New([]string{GitHubAPIHost})),
 	}, nil
 }
 

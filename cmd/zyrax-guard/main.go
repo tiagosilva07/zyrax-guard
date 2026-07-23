@@ -34,7 +34,7 @@ func usage() string {
 usage:
   zyrax-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict] [--deep]
   zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep] [--json]
-  zyrax-guard allow [--ecosystem npm|pypi|crates] <name>
+  zyrax-guard allow [--ecosystem npm|pypi|crates] [--reason "why"] <name>
   zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
@@ -347,7 +347,8 @@ func cmdInstall(args []string) int {
 func cmdAllow(args []string) int {
 	fs := flag.NewFlagSet("allow", flag.ContinueOnError)
 	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
-	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem"))); c >= 0 {
+	reason := fs.String("reason", "", "why this package is trusted (recorded in .zyrax/policy.json for review)")
+	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem", "reason"))); c >= 0 {
 		return c
 	}
 	if fs.NArg() != 1 {
@@ -364,7 +365,7 @@ func cmdAllow(args []string) int {
 		fmt.Fprintln(os.Stderr, "invalid package name:", err)
 		return 2
 	}
-	if err := orch.Policy.Allow(name); err != nil {
+	if err := orch.Policy.Allow(name, *reason); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
