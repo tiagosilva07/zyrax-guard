@@ -12,6 +12,7 @@ type Orchestrator struct {
 	Eco    seam.Ecosystem
 	Intel  seam.ThreatIntel
 	Policy seam.Policy
+	GitHub *GitHubClient // optional; nil skips the repo-context signal
 }
 
 // Check vets one package end-to-end and returns the verdict Result. Policy
@@ -77,6 +78,12 @@ func (o *Orchestrator) CheckWith(ctx context.Context, name, version string, deep
 			signals = append(signals, verdict.Signal{Check: verdict.RuleSuspiciousInstall, Level: verdict.LevelInfo, Message: "could not fetch artifact for deep analysis: " + err.Error()})
 		} else {
 			signals = append(signals, AnalyzeInstallScripts(o.Eco.Name(), files))
+		}
+		// Advisory-only context, never wired into the verdict — see the design
+		// note on GitHubClient.Context for why reputation must not suppress a
+		// behavioral finding.
+		if o.GitHub != nil && md.RepoURL != "" {
+			signals = append(signals, o.GitHub.Context(ctx, md.RepoURL))
 		}
 	}
 	return verdict.Decide(o.Eco.Name(), name, version, signals)

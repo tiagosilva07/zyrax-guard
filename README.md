@@ -445,20 +445,38 @@ policy file — no config file or environment variables required.
 | `--json` | check, install, scan, scan-agents | off | JSON output |
 | `--sarif` | check, scan | off | SARIF 2.1.0 output (for code-scanning ingestion) |
 | `--ignore-scripts` | install | off | Pass `--ignore-scripts` through to npm |
+| `--reason <text>` | allow | — | Recorded with the allowlist entry in `.zyrax/policy.json` for later review |
 | `--base <file>` | scan | — | Base lockfile to diff against (scan only added/changed deps) |
 | `--head <file>` | scan | per-ecosystem (`package-lock.json` / `poetry.lock`, falling back to `requirements.txt` / `Cargo.lock`) | Head lockfile to scan |
 | `--require-signature` | upgrade | **on** | Verify the cosign signature before replacing the binary; pass `--require-signature=false` to accept checksum-only |
 
 ### Local policy file
 
-`zyrax-guard allow <name>` records decisions in `.zyrax/policy.json` at the project root:
+`zyrax-guard allow <name> [--reason "why"]` records decisions in `.zyrax/policy.json` at
+the project root. Every `allow` is timestamped (UTC); a reason is optional but recorded
+alongside it when given, so a teammate reviewing the diff sees why a package was trusted,
+not just its name:
 
 ```json
-{ "allow": ["my-internal-pkg"], "deny": ["known-bad-pkg"] }
+{
+  "allow": [
+    "my-internal-pkg",
+    { "name": "graphifyy", "reason": "reviewed setup.py — FP on tree-sitter-bash", "at": "2026-07-23T15:00:00Z" }
+  ],
+  "deny": ["known-bad-pkg"]
+}
 ```
+
+Both forms are accepted on load — a bare string is still a valid entry, so files written
+before `reason`/`at` existed keep working unchanged.
 
 Allowlisted packages skip checks; denylisted packages always BLOCK. Commit the file to
 share policy across a team. (Org-wide policy is a paid drop-in via the `Policy` seam.)
+
+Guard deliberately does **not** offer an inline "block or continue?" prompt at check time:
+an AI agent driving the CLI could auto-answer such a prompt, and non-interactive contexts
+(CI, scripts) can't answer one at all. `allow` requires a separate, deliberate command —
+outside whatever automated loop hit the BLOCK — and leaves a reviewable trail in git.
 
 ### Exit codes
 

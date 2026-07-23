@@ -35,7 +35,7 @@ func (t *Text) Report(results []verdict.Result) error {
 		// advisory summaries) — sanitize so it cannot inject terminal escapes.
 		fmt.Fprintf(t.W, "%s%s %s@%s — %s%s\n", col, mark, Sanitize(r.Name), Sanitize(ver), r.VerdictStr, reset)
 		for _, s := range r.Signals {
-			if s.Level == verdict.LevelInfo || s.Message == "" {
+			if !s.ShouldDisplay() {
 				continue
 			}
 			fmt.Fprintf(t.W, "  - %s\n", Sanitize(s.Message))

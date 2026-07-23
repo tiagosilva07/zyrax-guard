@@ -170,7 +170,7 @@ func renderForAgent(r verdict.Result) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s — %s@%s", r.VerdictStr, report.Sanitize(r.Name), report.Sanitize(r.Version))
 	for _, s := range r.Signals {
-		if s.Level == verdict.LevelInfo || s.Message == "" {
+		if !s.ShouldDisplay() {
 			continue
 		}
 		fmt.Fprintf(&b, "\n  - %s", report.Sanitize(s.Message))
