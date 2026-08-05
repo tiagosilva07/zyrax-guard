@@ -71,3 +71,17 @@ zyrax-guard scan --ecosystem crates \
   --head Cargo.lock \
   --sarif --strict > guard.sarif
 ```
+
+## Go modules in CI
+
+```bash
+git show "origin/$BASE_REF:go.sum" > /tmp/base-lock.txt 2>/dev/null || echo "" > /tmp/base-lock.txt
+zyrax-guard scan --ecosystem gomod \
+  --base /tmp/base-lock.txt \
+  --head go.sum \
+  --sarif --strict > guard.sarif
+```
+
+Typosquat/popularity checks are skipped for Go modules (the module proxy has no
+download-count endpoint) — this gate still catches nonexistent module paths and OSV
+malware/vulnerability matches. See [Ecosystems](../README.md#ecosystems) in the README.
