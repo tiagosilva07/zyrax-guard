@@ -7,7 +7,7 @@ package hook
 import "fmt"
 
 // SnippetFor renders the guard wrapper for a package manager: npm (default),
-// pip, or cargo. The wrapper gates the manager's add-dependency verb via
+// pip, cargo, or go. The wrapper gates the manager's add-dependency verb via
 // `zyrax-guard check --ecosystem <eco>` and otherwise calls the real manager.
 func SnippetFor(shell, manager string) (string, error) {
 	var verb, eco string
@@ -18,8 +18,10 @@ func SnippetFor(shell, manager string) (string, error) {
 		verb, eco = "install", "pypi"
 	case "cargo":
 		verb, eco = "add", "crates"
+	case "go":
+		verb, eco = "get", "gomod"
 	default:
-		return "", fmt.Errorf("unsupported manager %q (use npm, pip, or cargo)", manager)
+		return "", fmt.Errorf("unsupported manager %q (use npm, pip, cargo, or go)", manager)
 	}
 	switch shell {
 	case "bash", "zsh":

@@ -107,6 +107,43 @@ func TestLockIntegrityChanged(t *testing.T) {
 	}
 }
 
+func TestParseGoSum(t *testing.T) {
+	sum := `github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
+`
+	m := parseGoSum([]byte(sum))
+	if len(m) != 1 {
+		t.Fatalf("want 1 module (the /go.mod line must be skipped), got %d: %+v", len(m), m)
+	}
+	e := m["github.com/pkg/errors"]
+	if e.Version != "v0.9.1" || e.Integrity != "h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=" {
+		t.Fatalf("parsed entry wrong: %+v", e)
+	}
+}
+
+func TestParseLockDispatchGoMod(t *testing.T) {
+	sum := "example.com/mod v1.0.0 h1:abc=\nexample.com/mod v1.0.0/go.mod h1:def=\n"
+	m, err := ParseLock("gomod", []byte(sum))
+	if err != nil || m["example.com/mod"].Version != "v1.0.0" {
+		t.Fatalf("dispatch gomod: %+v err=%v", m, err)
+	}
+}
+
+func TestGoSumIntegrityChanged(t *testing.T) {
+	base := "example.com/mod v1.0.0 h1:abc=\n"
+	head := "example.com/mod v1.0.0 h1:TAMPERED=\n"
+	_, changed, err := DiffLockfilesEco("gomod", []byte(base), []byte(head))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(changed) != 1 {
+		t.Fatalf("expected 1 integrity change, got %+v", changed)
+	}
+	if s := LockfileIntegrity(changed[0]); s.Level != verdict.LevelBlock {
+		t.Errorf("integrity change should BLOCK, got %v", s.Level)
+	}
+}
+
 func TestDiffLockfilesEco_EmptyBaseAllAdded(t *testing.T) {
 	// A missing/empty base lockfile must parse to no packages (all head deps "added"),
 	// for every ecosystem — npm's JSON parser must tolerate empty input too.
@@ -114,6 +151,7 @@ func TestDiffLockfilesEco_EmptyBaseAllAdded(t *testing.T) {
 		"npm":    []byte(`{"packages":{"node_modules/a":{"version":"1.0.0"}}}`),
 		"crates": []byte("[[package]]\nname = \"a\"\nversion = \"1.0.0\"\n"),
 		"pypi":   []byte("a==1.0.0\n"),
+		"gomod":  []byte("a v1.0.0 h1:abc=\n"),
 	}
 	for eco, head := range heads {
 		added, _, err := DiffLockfilesEco(eco, nil, head)

@@ -2,8 +2,10 @@ package artifact
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"strings"
 	"testing"
 )
 
@@ -82,4 +84,78 @@ func TestExtractTarGzCapsTotalDecompression(t *testing.T) {
 
 func fmtName(i int) string {
 	return "package/f" + string(rune('a'+i%26)) + string(rune('0'+i/26)) + ".js"
+}
+
+func makeZip(t *testing.T, entries map[string]string, extra func(*zip.Writer)) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range entries {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if extra != nil {
+		extra(zw)
+	}
+	zw.Close()
+	return buf.Bytes()
+}
+
+func TestExtractZipBasic(t *testing.T) {
+	z := makeZip(t, map[string]string{
+		"example.com/mod@v1.0.0/go.mod": "module example.com/mod\n",
+		"example.com/mod@v1.0.0/mod.go": "package mod\n",
+	}, nil)
+	files, err := ExtractZip(z, DefaultLimits())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if files["example.com/mod@v1.0.0/go.mod"] != "module example.com/mod\n" {
+		t.Fatalf("missing go.mod: %v", files)
+	}
+}
+
+func TestExtractZipRejectsTraversal(t *testing.T) {
+	z := makeZip(t, map[string]string{"../evil": "x"}, nil)
+	if f, _ := ExtractZip(z, DefaultLimits()); len(f) != 0 {
+		t.Errorf("path traversal entry must be skipped: %v", f)
+	}
+}
+
+func TestExtractZipFileCountCap(t *testing.T) {
+	many := map[string]string{}
+	for i := 0; i < 50; i++ {
+		many[fmtName(i)] = "x"
+	}
+	lim := DefaultLimits()
+	lim.MaxFiles = 10
+	if _, err := ExtractZip(makeZip(t, many, nil), lim); err == nil {
+		t.Fatal("exceeding MaxFiles must error")
+	}
+}
+
+func TestExtractZipCapsDecompression(t *testing.T) {
+	// Zip entries are independently addressable, so a single oversized entry
+	// is already bounded by the io.LimitReader on its own read (unlike tar's
+	// shared gzip stream). The bomb risk here is many skipped-oversized entries
+	// each contributing their own bounded-but-nonzero read: the running
+	// decompressed-bytes total must still cap that cumulative cost.
+	entries := map[string]string{}
+	for i := 0; i < 100; i++ {
+		entries[fmtName(i)] = strings.Repeat("x", 200) // over MaxFileBytes below
+	}
+	z := makeZip(t, entries, nil)
+
+	lim := DefaultLimits()
+	lim.MaxFiles = 1000
+	lim.MaxFileBytes = 50          // every entry skipped (200 > 50); ~51 bytes read each
+	lim.MaxDecompressedBytes = 500 // exceeded well before all 100 entries are read
+	if _, err := ExtractZip(z, lim); err == nil {
+		t.Fatal("expected decompression-cap error from cumulative skipped-entry reads")
+	}
 }

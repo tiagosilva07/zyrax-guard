@@ -30,7 +30,7 @@ func checkPackageTool() map[string]any {
 			"properties": map[string]any{
 				"name":      map[string]any{"type": "string", "description": "package name to check"},
 				"version":   map[string]any{"type": "string", "description": "optional; defaults to the latest published version"},
-				"ecosystem": map[string]any{"type": "string", "enum": []string{"npm", "pypi", "crates"}, "default": "npm"},
+				"ecosystem": map[string]any{"type": "string", "enum": []string{"npm", "pypi", "crates", "gomod"}, "default": "npm"},
 				"deep":      map[string]any{"type": "boolean", "description": "download the artifact and statically analyze install/build scripts (slower)"},
 			},
 			"required": []string{"name"},

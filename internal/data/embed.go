@@ -37,6 +37,19 @@ func PopularCrates() []string {
 	return out
 }
 
+//go:embed popular-gomod.json
+var popularGoModRaw []byte
+
+// PopularGoModules returns the bundled well-known Go module paths. Unlike
+// npm/PyPI/crates.io, the Go module proxy exposes no download-count API to
+// rank by — this list is manually curated (see scripts/refresh-popular-gomod.sh)
+// rather than machine-generated from a popularity endpoint.
+func PopularGoModules() []string {
+	var out []string
+	_ = json.Unmarshal(popularGoModRaw, &out)
+	return out
+}
+
 //go:embed denylist.json
 var denylistRaw []byte
 

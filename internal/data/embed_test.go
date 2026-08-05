@@ -17,6 +17,12 @@ func TestPopularPyPIAndCratesNonEmpty(t *testing.T) {
 	}
 }
 
+func TestPopularGoModulesNonEmpty(t *testing.T) {
+	if len(PopularGoModules()) < 10 {
+		t.Errorf("gomod list too small: %d", len(PopularGoModules()))
+	}
+}
+
 func TestDenylistEmbedNonEmpty(t *testing.T) {
 	d := Denylist()
 	if len(d["npm"]) == 0 {

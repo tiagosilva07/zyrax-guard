@@ -1,11 +1,12 @@
-// Package artifact extracts a gzipped tar (npm .tgz, PyPI sdist, crates .crate) into
-// an in-memory path->content map, with strict caps and path/symlink sanitization —
-// the files are untrusted, so this never writes to disk, never follows links, and
-// never lets an entry escape the archive root.
+// Package artifact extracts a gzipped tar (npm .tgz, PyPI sdist, crates .crate) or a
+// zip (Go module source) into an in-memory path->content map, with strict caps and
+// path/symlink sanitization — the files are untrusted, so this never writes to disk,
+// never follows links, and never lets an entry escape the archive root.
 package artifact
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"fmt"
@@ -81,6 +82,56 @@ func ExtractTarGz(b []byte, lim Limits) (map[string]string, error) {
 		}
 		if int64(len(data)) > lim.MaxFileBytes {
 			continue
+		}
+		total += int64(len(data))
+		if total > lim.MaxTotalBytes {
+			return nil, fmt.Errorf("archive exceeds %d total bytes", lim.MaxTotalBytes)
+		}
+		out[clean] = string(data)
+	}
+	return out, nil
+}
+
+// ExtractZip returns regular-file path->content from a zip archive (the Go module
+// proxy serves module source as .zip, unlike npm/PyPI/crates.io's gzipped tar).
+// Same safety guarantees as ExtractTarGz: symlinks and non-regular entries are
+// skipped, traversal/absolute paths are rejected, and per-file/total/entry-count
+// caps are enforced. Zip entries are independently addressable (no single shared
+// decompression stream to wrap in a counting reader), so the decompressed-bytes
+// bomb guard is enforced by running total across each entry's capped read instead.
+func ExtractZip(b []byte, lim Limits) (map[string]string, error) {
+	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
+	if err != nil {
+		return nil, fmt.Errorf("zip: %w", err)
+	}
+	if len(zr.File) > lim.MaxFiles {
+		return nil, fmt.Errorf("archive exceeds %d entries", lim.MaxFiles)
+	}
+	out := map[string]string{}
+	var total, decompressed int64
+	for _, f := range zr.File {
+		if !f.Mode().IsRegular() {
+			continue // skip dirs, symlinks
+		}
+		clean := path.Clean(f.Name)
+		if strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
+			continue // path traversal / absolute — reject
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return nil, fmt.Errorf("zip entry %s: %w", f.Name, err)
+		}
+		data, err := io.ReadAll(io.LimitReader(rc, lim.MaxFileBytes+1))
+		rc.Close()
+		if err != nil {
+			return nil, fmt.Errorf("zip entry %s: %w", f.Name, err)
+		}
+		decompressed += int64(len(data))
+		if decompressed > lim.MaxDecompressedBytes {
+			return nil, fmt.Errorf("archive decompresses beyond %d bytes (possible zip bomb)", lim.MaxDecompressedBytes)
+		}
+		if int64(len(data)) > lim.MaxFileBytes {
+			continue // per-file cap exceeded — skip, don't keep partial content
 		}
 		total += int64(len(data))
 		if total > lim.MaxTotalBytes {
