@@ -32,14 +32,14 @@ func usage() string {
 	return `zyrax-guard — vet packages before install · audit AI agent configs before they run
 
 usage:
-  zyrax-guard check <name>[@version] [--ecosystem npm|pypi|crates] [--json|--sarif] [--strict] [--deep]
-  zyrax-guard install <names...> [--ecosystem npm|pypi|crates] [--ignore-scripts] [--strict] [--deep] [--json]
-  zyrax-guard allow [--ecosystem npm|pypi|crates] [--reason "why"] <name>
-  zyrax-guard scan [--ecosystem npm|pypi|crates] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
+  zyrax-guard check <name>[@version] [--ecosystem npm|pypi|crates|gomod] [--json|--sarif] [--strict] [--deep]
+  zyrax-guard install <names...> [--ecosystem npm|pypi|crates|gomod] [--ignore-scripts] [--strict] [--deep] [--json]
+  zyrax-guard allow [--ecosystem npm|pypi|crates|gomod] [--reason "why"] <name>
+  zyrax-guard scan [--ecosystem npm|pypi|crates|gomod] [--base F] [--head F] [--strict] [--json|--sarif] [--deep]
   zyrax-guard scan-agents [dir] [--json|--sarif] [--strict] (audit CLAUDE.md, .mcp.json, settings.json, …)
   zyrax-guard mcp                                           (MCP server for AI agents; stdio)
   zyrax-guard mcp install [--global] [--command binary|npx]  (register Guard with your agent)
-  zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]   (shell hook: gate installs)
+  zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo|go]   (shell hook: gate installs)
   zyrax-guard upgrade [--require-signature=false]           (update Guard to the latest release)
   zyrax-guard version [--check]
   zyrax-guard --version
@@ -275,7 +275,7 @@ func cmdCheck(args []string) int {
 	asJSON := fs.Bool("json", false, "JSON output")
 	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
-	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates|gomod")
 	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
 	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem"))); c >= 0 {
 		return c
@@ -302,7 +302,7 @@ func cmdInstall(args []string) int {
 	asJSON := fs.Bool("json", false, "JSON output")
 	ignoreScripts := fs.Bool("ignore-scripts", false, "pass --ignore-scripts to npm")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
-	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates|gomod")
 	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
 	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem"))); c >= 0 {
 		return c
@@ -346,7 +346,7 @@ func cmdInstall(args []string) int {
 
 func cmdAllow(args []string) int {
 	fs := flag.NewFlagSet("allow", flag.ContinueOnError)
-	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates|gomod")
 	reason := fs.String("reason", "", "why this package is trusted (recorded in .zyrax/policy.json for review)")
 	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "ecosystem", "reason"))); c >= 0 {
 		return c
@@ -384,19 +384,19 @@ func cmdScan(args []string) int {
 	asJSON := fs.Bool("json", false, "JSON output")
 	asSARIF := fs.Bool("sarif", false, "SARIF output")
 	strict := fs.Bool("strict", false, "treat WARN as failure")
-	eco := fs.String("ecosystem", "npm", "npm|pypi|crates")
+	eco := fs.String("ecosystem", "npm", "npm|pypi|crates|gomod")
 	deep := fs.Bool("deep", false, "download + analyze install/build scripts")
 	if c := parseExit(fs.Parse(reorderFlagsFirst(args, "base", "head", "ecosystem"))); c >= 0 {
 		return c
 	}
 	// Validate ecosystem early (before any file I/O).
-	validEco := map[string]bool{"npm": true, "pypi": true, "crates": true}
+	validEco := map[string]bool{"npm": true, "pypi": true, "crates": true, "gomod": true}
 	if !validEco[*eco] {
-		fmt.Fprintf(os.Stderr, "unsupported ecosystem %q (use npm, pypi, or crates)\n", *eco)
+		fmt.Fprintf(os.Stderr, "unsupported ecosystem %q (use npm, pypi, crates, or gomod)\n", *eco)
 		return 2
 	}
 	// Pick per-ecosystem default head path when the flag still holds the npm default.
-	defaultHead := map[string]string{"npm": "package-lock.json", "crates": "Cargo.lock", "pypi": "poetry.lock"}
+	defaultHead := map[string]string{"npm": "package-lock.json", "crates": "Cargo.lock", "pypi": "poetry.lock", "gomod": "go.sum"}
 	// pip-tools projects have requirements.txt but no poetry.lock — fall back
 	// when the pypi default is absent and --head was not given explicitly.
 	if *eco == "pypi" && *headPath == "package-lock.json" {
@@ -563,7 +563,7 @@ func mcpInstallGlobal(client string, cmd []string) int {
 
 func cmdInit(args []string) int {
 	if len(args) < 1 || len(args) > 2 {
-		fmt.Fprintln(os.Stderr, "usage: zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo]")
+		fmt.Fprintln(os.Stderr, "usage: zyrax-guard init <bash|zsh|powershell> [npm|pip|cargo|go]")
 		return 2
 	}
 	mgr := "npm"

@@ -7,10 +7,10 @@ branding:
 
 inputs:
   ecosystem:
-    description: "Package ecosystem: npm, pypi, or crates."
+    description: "Package ecosystem: npm, pypi, crates, or gomod."
     default: "npm"
   lockfile:
-    description: "Lockfile to scan. Empty uses the ecosystem default (package-lock.json / poetry.lock / Cargo.lock)."
+    description: "Lockfile to scan. Empty uses the ecosystem default (package-lock.json / poetry.lock / Cargo.lock / go.sum)."
     default: ""
   base:
     description: "Base lockfile to diff against (scan only added/changed deps). Empty: on a pull_request, the base ref's lockfile is used automatically when available; otherwise the whole lockfile is scanned."

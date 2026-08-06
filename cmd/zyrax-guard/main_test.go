@@ -220,6 +220,27 @@ func TestAllowAcceptsEcosystemFlag(t *testing.T) {
 	if code := run([]string{"allow", "--ecosystem", "bogus", "x"}); code != 2 {
 		t.Fatalf("allow --ecosystem bogus exit=%d want 2", code)
 	}
+	// A valid Go module path under --ecosystem gomod should be accepted too.
+	if code := run([]string{"allow", "--ecosystem", "gomod", "github.com/pkg/errors"}); code != 0 {
+		t.Fatalf("allow --ecosystem gomod exit=%d want 0", code)
+	}
+}
+
+func TestScanGomodDefaultsHeadToGoSum(t *testing.T) {
+	dir := t.TempDir()
+	// Empty go.sum → no added/changed deps → no registry calls, keeping this
+	// test network-free while still exercising the default-head resolution.
+	if err := os.WriteFile(filepath.Join(dir, "go.sum"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cwd, _ := os.Getwd()
+	defer os.Chdir(cwd)
+	os.Chdir(dir)
+	// --head is left at the npm default ("package-lock.json"), which doesn't
+	// exist here — gomod's default (go.sum) must kick in instead.
+	if code := run([]string{"scan", "--ecosystem", "gomod"}); code != 0 {
+		t.Fatalf("scan --ecosystem gomod exit=%d want 0", code)
+	}
 }
 
 func TestSubcommandHelpExitsZero(t *testing.T) {

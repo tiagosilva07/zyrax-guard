@@ -38,6 +38,7 @@ func TestManagerSnippets(t *testing.T) {
 	cases := []struct{ mgr, verb, ecoFlag string }{
 		{"pip", "install", "pypi"},
 		{"cargo", "add", "crates"},
+		{"go", "get", "gomod"},
 	}
 	for _, c := range cases {
 		s, err := SnippetFor("bash", c.mgr)

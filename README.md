@@ -170,17 +170,19 @@ and Cursor rules files. Exits 1 if any CRITICAL or HIGH finding is found.
 ### Check a single package
 
 ```bash
-zyrax-guard check lodash                          # npm (default)
-zyrax-guard check requests --ecosystem pypi       # PyPI
-zyrax-guard check serde --ecosystem crates        # crates.io
+zyrax-guard check lodash                              # npm (default)
+zyrax-guard check requests --ecosystem pypi           # PyPI
+zyrax-guard check serde --ecosystem crates            # crates.io
+zyrax-guard check github.com/pkg/errors --ecosystem gomod  # Go modules
 ```
 
 ### Check-then-install
 
 ```bash
-zyrax-guard install lodash axios                  # vets, then runs npm install
-zyrax-guard install flask --ecosystem pypi        # vets, then runs pip install
-zyrax-guard install serde --ecosystem crates      # vets, then runs cargo add
+zyrax-guard install lodash axios                      # vets, then runs npm install
+zyrax-guard install flask --ecosystem pypi            # vets, then runs pip install
+zyrax-guard install serde --ecosystem crates          # vets, then runs cargo add
+zyrax-guard install github.com/pkg/errors --ecosystem gomod  # vets, then runs go get
 ```
 
 ### Allow a package (add to local policy)
@@ -354,14 +356,30 @@ Audit agent configs **and** dependencies, both surfaced in Code Scanning:
 
 ## Ecosystems
 
-Guard supports **npm, PyPI, and crates.io**. Pick one with `--ecosystem` (default `npm`):
+Guard supports **npm, PyPI, crates.io, and Go modules**. Pick one with `--ecosystem`
+(default `npm`):
 
 ```bash
 zyrax-guard check --ecosystem pypi requests
 zyrax-guard check --ecosystem crates serde
+zyrax-guard check --ecosystem gomod github.com/pkg/errors
 zyrax-guard scan --ecosystem crates              # PR gate over Cargo.lock
 zyrax-guard scan --ecosystem pypi               # PR gate over poetry.lock / requirements.txt
+zyrax-guard scan --ecosystem gomod              # PR gate over go.sum
 ```
+
+Go modules are queried against `proxy.golang.org` (the standard Go module proxy — no
+auth, no download-count API). Two differences from the other ecosystems, both
+by design:
+
+- **Typosquat/popularity checks are skipped.** Unlike npm/PyPI/crates.io, the module
+  proxy has no download-count endpoint, so Guard has no real usage signal to compare
+  against — it reports "download statistics unavailable" rather than fabricate a
+  "0 downloads" typosquat verdict against a real module. Existence and known-malware
+  (OSV) checks still run normally.
+- **`--deep` reports "no install/build scripts found" for every Go module.** `go get`
+  / `go mod download` never execute code from the fetched module — there is no
+  npm-postinstall/pip-setup.py/cargo-build.rs analog to statically analyze.
 
 ---
 
@@ -386,7 +404,8 @@ before Guard gives up; only a persistent failure yields **ERROR** (fail closed �
 
 By default checks are metadata-only (milliseconds). Add `--deep` to also download the
 package's distribution artifact and **statically inspect the code it runs at install/build
-time** — npm `preinstall`/`install`/`postinstall` scripts, PyPI `setup.py`, crates `build.rs`:
+time** — npm `preinstall`/`install`/`postinstall` scripts, PyPI `setup.py`, crates `build.rs`
+(Go modules have no such hook — see [Ecosystems](#ecosystems)):
 
 ```bash
 zyrax-guard check --deep some-pkg
@@ -439,7 +458,7 @@ policy file — no config file or environment variables required.
 
 | Flag | Commands | Default | Effect |
 |---|---|---|---|
-| `--ecosystem npm\|pypi\|crates` | check, install, scan | `npm` | Target package ecosystem |
+| `--ecosystem npm\|pypi\|crates\|gomod` | check, install, scan | `npm` | Target package ecosystem |
 | `--strict` | check, install, scan, scan-agents | off | Tighten failure: WARN → fail (package commands); any finding → fail (`scan-agents`) |
 | `--deep` | check, install, scan | off | Download + statically analyze install/build scripts |
 | `--json` | check, install, scan, scan-agents | off | JSON output |
@@ -447,7 +466,7 @@ policy file — no config file or environment variables required.
 | `--ignore-scripts` | install | off | Pass `--ignore-scripts` through to npm |
 | `--reason <text>` | allow | — | Recorded with the allowlist entry in `.zyrax/policy.json` for later review |
 | `--base <file>` | scan | — | Base lockfile to diff against (scan only added/changed deps) |
-| `--head <file>` | scan | per-ecosystem (`package-lock.json` / `poetry.lock`, falling back to `requirements.txt` / `Cargo.lock`) | Head lockfile to scan |
+| `--head <file>` | scan | per-ecosystem (`package-lock.json` / `poetry.lock`, falling back to `requirements.txt` / `Cargo.lock` / `go.sum`) | Head lockfile to scan |
 | `--require-signature` | upgrade | **on** | Verify the cosign signature before replacing the binary; pass `--require-signature=false` to accept checksum-only |
 
 ### Local policy file
@@ -491,9 +510,9 @@ See [Verdicts](#verdicts) for package verdict meanings.
 
 ## Make it automatic — shell hook
 
-The shell hook intercepts `npm install` / `pip install` / `cargo add` transparently.
-Every new package gets checked before the real installer runs; already-installed and
-non-install commands pass through untouched.
+The shell hook intercepts `npm install` / `pip install` / `cargo add` / `go get`
+transparently. Every new package gets checked before the real installer runs;
+already-installed and non-install commands pass through untouched.
 
 ### macOS / Linux (bash or zsh)
 
@@ -508,6 +527,9 @@ eval "$(zyrax-guard init bash pip)"
 
 # Gate cargo add
 eval "$(zyrax-guard init bash cargo)"
+
+# Gate go get
+eval "$(zyrax-guard init bash go)"
 ```
 
 Apply immediately without restarting your terminal:
@@ -536,8 +558,8 @@ Apply immediately:
 . $PROFILE
 ```
 
-From now on every `npm install`, `pip install`, or `cargo add` in a PowerShell window
-is automatically checked before anything installs.
+From now on every `npm install`, `pip install`, `cargo add`, or `go get` in a
+PowerShell window is automatically checked before anything installs.
 
 ---
 
@@ -577,9 +599,9 @@ in one line with `npx -y zyrax-guard mcp`.
 
 Gate pull requests so a malicious or hallucinated dependency fails the build. The
 [GitHub Action](#github-action) is the quickest path; `zyrax-guard scan` recipes for
-GitHub Actions, PyPI, and crates.io live in the CI guide.
+GitHub Actions, PyPI, crates.io, and Go modules live in the CI guide.
 
-→ **[CI recipes (GitHub Actions PR gate, PyPI, crates.io)](docs/ci.md)**
+→ **[CI recipes (GitHub Actions PR gate, PyPI, crates.io, Go modules)](docs/ci.md)**
 
 ---
 
@@ -590,6 +612,7 @@ against public registry APIs:
 
 - `registry.npmjs.org` — existence and metadata
 - `api.npmjs.org` — download counts
+- `proxy.golang.org` — Go module existence and version metadata
 - `api.osv.dev` — known advisories
 - `registry.npmjs.org` — Guard's own latest version (update check, ≤1×/day; disable with `ZYRAX_NO_UPDATE_CHECK=1`)
 - `github.com` — only when you run `zyrax-guard upgrade` (downloads the signed release binary)
@@ -626,7 +649,8 @@ and audit/compliance reporting) is in development — learn more at **[zyrax.io]
 | **v0.9.0** | Update detection (daily opt-out notice + verified `upgrade`) + one-step `mcp install`; **production-readiness**: fail-closed `ERROR` verdict (network failure no longer bypasses the gate), retries/backoff, MCP panic recovery, cosign-verified upgrade, hardened CI (gitleaks/staticcheck/dependency-review); **agent-config detection hardening** (obfuscation-normalized matching, allowlist-style MCP/exec/perms, `zyrax-allow` suppression) | shipped |
 | **v0.10.0** | **Correctness & fail-closed hardening** from a full audit: npm-workspace lockfile support in `scan` (monorepos no longer crash), `install` installs the exact vetted `name@version`, `scan-agents` fails on a missing directory and reports unscannable (oversize/unreadable) configs, registry-derived text sanitized against terminal-escape/prompt injection, unknown download stats no longer read as "0" (no false typosquat BLOCKs), wall-clock budgets on every check entry point, **signature-verified `upgrade` by default**, `--help` exits 0 + documented exit codes, `install --json` | shipped |
 | **v0.11.x** | **Verdict policy: BLOCK is malware-only** (v0.11.0) — vulnerabilities in legitimate packages WARN at any severity (`--strict` to fail); **Windows scoop bucket** ([`scoop-zyrax`](https://github.com/tiagosilva07/scoop-zyrax)) + `upgrade` delegation, closing Windows upgrade parity | shipped |
-| **exploring** | Semantic detection layer (LLM/heuristic judge for paraphrased/non-English prompt injection) as a Zyrax-platform capability; community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (Go modules, RubyGems) via the `Ecosystem` seam | — |
+| **v0.12.0** | **Go modules** ecosystem (`--ecosystem gomod`, `proxy.golang.org`) across check/install/hook/MCP/scan, with go.sum lockfile support | shipped |
+| **exploring** | Semantic detection layer (LLM/heuristic judge for paraphrased/non-English prompt injection) as a Zyrax-platform capability; community-curated threat intel (shared malicious-package & MCP-host feeds); more ecosystems (RubyGems) via the `Ecosystem` seam | — |
 
 The roadmap items drop in via the existing `Ecosystem`, `ThreatIntel`, `Policy`, and
 `Reporter` seams — no re-architecting required.

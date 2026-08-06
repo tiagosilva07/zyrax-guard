@@ -3,7 +3,7 @@ package check
 import "testing"
 
 func TestNewEcosystems(t *testing.T) {
-	for _, eco := range []string{"npm", "pypi", "crates"} {
+	for _, eco := range []string{"npm", "pypi", "crates", "gomod"} {
 		o, err := New(eco, t.TempDir())
 		if err != nil {
 			t.Fatalf("New(%q): %v", eco, err)
