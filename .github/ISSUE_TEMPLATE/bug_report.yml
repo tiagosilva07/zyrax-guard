@@ -1,79 +1,61 @@
 name: Bug report
-description: Something is not working correctly
+description: Something is broken or behaving unexpectedly
 labels: ["bug"]
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Thanks for taking the time to report a bug.
-        **Security vulnerabilities** — please do NOT open a public issue. Email **privacy@zyrax.io** instead. See [SECURITY.md](../SECURITY.md).
-
-  - type: input
-    id: version
-    attributes:
-      label: Zyrax Guard version
-      description: Run `zyrax-guard --version` and paste the output.
-      placeholder: "e.g. 0.5.0"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: os
-    attributes:
-      label: Operating system
-      options:
-        - Linux (amd64)
-        - Linux (arm64)
-        - macOS (amd64)
-        - macOS (arm64 / Apple Silicon)
-        - Windows (amd64)
-        - Windows (arm64)
-        - Other
-    validations:
-      required: true
-
-  - type: dropdown
-    id: ecosystem
-    attributes:
-      label: Ecosystem
-      description: Which package ecosystem were you using?
-      options:
-        - npm
-        - PyPI
-        - crates.io
-        - All / not ecosystem-specific
-    validations:
-      required: true
-
   - type: textarea
-    id: command
+    id: what-happened
     attributes:
-      label: Command you ran
-      description: The exact command, with any flags.
-      render: shell
-      placeholder: "zyrax-guard check some-package --ecosystem npm"
+      label: What happened?
+      description: What did you run, and what went wrong?
     validations:
       required: true
-
   - type: textarea
     id: expected
     attributes:
-      label: What you expected
-      placeholder: "e.g. SAFE verdict for a package I know is clean"
+      label: Expected behavior
     validations:
       required: true
-
-  - type: textarea
-    id: actual
+  - type: input
+    id: command
     attributes:
-      label: What actually happened
-      description: Paste the full output if possible.
+      label: Exact command
+      placeholder: zyrax-guard scan-agents .
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: zyrax-guard version
+      description: Output of `zyrax-guard --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: Install method
+      options:
+        - npm / npx
+        - Homebrew
+        - Scoop
+        - go install
+        - curl install script
+        - Signed release binary
+        - GitHub Action
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output / logs
+      description: Paste output here. Redact secrets, tokens, or private file contents.
       render: shell
-    validations:
-      required: true
-
-  - type: textarea
-    id: context
-    attributes:
-      label: Additional context
-      description: Anything else that might help — package name, version, network environment, CI vs local, etc.

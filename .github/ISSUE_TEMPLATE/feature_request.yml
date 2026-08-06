@@ -5,37 +5,31 @@ body:
   - type: textarea
     id: problem
     attributes:
-      label: What problem does this solve?
-      description: Describe the situation where the current tool falls short.
+      label: What problem are you trying to solve?
     validations:
       required: true
-
   - type: textarea
-    id: solution
+    id: proposal
     attributes:
-      label: What would you like to see?
-      description: Describe your idea. Be as specific as you can.
+      label: Proposed solution
     validations:
       required: true
-
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives you have considered
-      description: Any workarounds you are currently using?
-
   - type: dropdown
     id: area
     attributes:
       label: Area
       options:
-        - CLI / commands
-        - MCP server / agent integration
-        - Shell hook
-        - New ecosystem support
-        - CI / GitHub Actions
-        - Checks / verdict logic
-        - Output formats (JSON, SARIF)
-        - Performance
-        - Documentation
+        - scan-agents (AI agent/MCP config auditing)
+        - check / scan / install (package vetting)
+        - MCP server
+        - GitHub Action
+        - Self-update / packaging
         - Other
+    validations:
+      required: true
+  - type: markdown
+    attributes:
+      value: |
+        Note: zyrax-guard's free CLI is intentionally **local, deterministic, and zero-dependency**.
+        Features that require a network call to a third-party LLM or send file contents off-machine
+        are unlikely to be accepted into the free CLI — see [positioning](https://zyrax.io).
