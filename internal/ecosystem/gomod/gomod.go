@@ -25,13 +25,14 @@ const maxNameLen = 512
 
 // nameRe matches the real-world shape of a published Go module path: a
 // domain-like first segment (containing a dot, e.g. "github.com", "golang.org",
-// "gopkg.in") followed by lowercase path segments. Go module paths CAN contain
-// uppercase letters (the proxy protocol escapes them as "!<lower>"), but every
-// module worth vetting in practice uses an all-lowercase path — restricting to
-// lowercase here means we never have to implement that escaping, and it stays
-// conservative in the same spirit as the npm/PyPI/crates name grammars: reject
-// anything unexpected before it reaches a URL or an exec arg.
-var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]*\.[a-z0-9][a-z0-9.-]*(/[a-z0-9][a-z0-9._-]*)*$`)
+// "gopkg.in") followed by path segments. Go module paths are case-sensitive and
+// mixed case is mainstream (github.com/BurntSushi/toml, github.com/Shopify/sarama)
+// — rejecting uppercase here would false-error on a large share of real modules,
+// including several in our own bundled popular list. Uppercase letters are
+// allowed in the grammar and escaped separately (see escapePath) before they
+// reach a proxy URL; "!" is excluded here since it is the escape character
+// itself and must never appear in raw user input.
+var nameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z0-9][A-Za-z0-9.-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`)
 
 // safeVersion gates a version before it goes into a proxy URL path. Real Go
 // versions ("v1.2.3", "v0.0.0-20210101000000-abcdef123456", "v2.0.0+incompatible")
@@ -51,6 +52,37 @@ func New(client *httpx.Client, popular []string) *Provider {
 
 func (p *Provider) Name() string          { return "gomod" }
 func (p *Provider) PopularList() []string { return p.popular }
+
+// escapePath converts a Go module path to its module-proxy-escaped form: each
+// uppercase letter becomes "!" followed by its lowercase equivalent, per
+// https://go.dev/ref/mod#goproxy-protocol. The proxy represents case this way
+// so that module paths differing only in case (which real filesystems and
+// module caches may not distinguish) still map to distinct, unambiguous proxy
+// URLs. This only affects proxy requests — `go get`/`go install` take the
+// real, unescaped path (see installArgs).
+func escapePath(path string) string {
+	hasUpper := false
+	for _, r := range path {
+		if r >= 'A' && r <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	if !hasUpper {
+		return path
+	}
+	var b strings.Builder
+	b.Grow(len(path) + 4)
+	for _, r := range path {
+		if r >= 'A' && r <= 'Z' {
+			b.WriteByte('!')
+			b.WriteRune(r - 'A' + 'a')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
 
 // ValidateName enforces the module-path grammar and a length bound.
 func (p *Provider) ValidateName(name string) error {
@@ -74,7 +106,7 @@ func (p *Provider) Exists(ctx context.Context, name, _ string) (bool, error) {
 	if err := p.ValidateName(name); err != nil {
 		return false, err
 	}
-	code, err := p.http.GetJSON(ctx, p.base+"/"+name+"/@latest", nil)
+	code, err := p.http.GetJSON(ctx, p.base+"/"+escapePath(name)+"/@latest", nil)
 	if err != nil {
 		return false, err
 	}
@@ -96,7 +128,7 @@ func (p *Provider) Metadata(ctx context.Context, name string) (seam.Metadata, er
 		return seam.Metadata{}, err
 	}
 	var lj latestJSON
-	code, err := p.http.GetJSON(ctx, p.base+"/"+name+"/@latest", &lj)
+	code, err := p.http.GetJSON(ctx, p.base+"/"+escapePath(name)+"/@latest", &lj)
 	if err != nil {
 		return seam.Metadata{}, err
 	}

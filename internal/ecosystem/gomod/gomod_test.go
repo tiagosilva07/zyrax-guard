@@ -29,6 +29,9 @@ func TestValidateName(t *testing.T) {
 		"golang.org/x/sync",
 		"gopkg.in/yaml.v2",
 		"k8s.io/client-go",
+		"github.com/BurntSushi/toml", // mixed case is mainstream, must validate
+		"github.com/Shopify/sarama",
+		"UPPER.com/pkg",
 	} {
 		if err := p.ValidateName(ok); err != nil {
 			t.Errorf("%q should be valid: %v", ok, err)
@@ -37,8 +40,8 @@ func TestValidateName(t *testing.T) {
 	for _, bad := range []string{
 		"foo;rm -rf",
 		"../evil",
-		"requests",      // no domain-like first segment
-		"UPPER.com/pkg", // uppercase rejected (see nameRe comment)
+		"requests", // no domain-like first segment
+		"github.com/!already-escaped",
 		"",
 		"github.com/../evil",
 		strings.Repeat("a.b/", 200),
@@ -46,6 +49,47 @@ func TestValidateName(t *testing.T) {
 		if err := p.ValidateName(bad); err == nil {
 			t.Errorf("%q should be invalid", bad)
 		}
+	}
+}
+
+func TestEscapePath(t *testing.T) {
+	cases := map[string]string{
+		"github.com/pkg/errors":      "github.com/pkg/errors",
+		"github.com/BurntSushi/toml": "github.com/!burnt!sushi/toml",
+		"UPPER.com/pkg":              "!u!p!p!e!r.com/pkg",
+	}
+	for in, want := range cases {
+		if got := escapePath(in); got != want {
+			t.Errorf("escapePath(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestExistsAndMetadataEscapeMixedCasePath(t *testing.T) {
+	// The proxy protocol requires uppercase letters escaped as "!<lower>" in
+	// the URL path — confirm the request actually goes out escaped, not raw.
+	p := newTestProvider(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "/github.com/!burnt!sushi/toml/@latest"):
+			w.Write([]byte(`{"Version":"v1.2.0","Time":"2020-01-14T00:00:00Z"}`))
+		default:
+			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	ctx := context.Background()
+	ok, err := p.Exists(ctx, "github.com/BurntSushi/toml", "")
+	if err != nil || !ok {
+		t.Fatalf("github.com/BurntSushi/toml should exist: ok=%v err=%v", ok, err)
+	}
+	md, err := p.Metadata(ctx, "github.com/BurntSushi/toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md.Latest != "v1.2.0" {
+		t.Errorf("md.Latest = %q, want v1.2.0", md.Latest)
+	}
+	if md.RepoURL != "https://github.com/BurntSushi/toml" {
+		t.Errorf("md.RepoURL = %q, want the case-preserved repo URL", md.RepoURL)
 	}
 }
 

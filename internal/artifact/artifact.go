@@ -99,6 +99,11 @@ func ExtractTarGz(b []byte, lim Limits) (map[string]string, error) {
 // caps are enforced. Zip entries are independently addressable (no single shared
 // decompression stream to wrap in a counting reader), so the decompressed-bytes
 // bomb guard is enforced by running total across each entry's capped read instead.
+//
+// Currently unused in production: gomod.InstallCode never fetches module zips
+// (go get executes no install-time code, so there is nothing to statically
+// analyze — see gomod.go). Reserved for a future --deep capability that wants
+// the module source itself (e.g. scanning for suspicious go:generate/cgo use).
 func ExtractZip(b []byte, lim Limits) (map[string]string, error) {
 	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
 	if err != nil {
