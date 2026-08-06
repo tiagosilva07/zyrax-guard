@@ -5,6 +5,7 @@ import (
 
 	"github.com/tiagosilva07/zyrax-guard/internal/data"
 	"github.com/tiagosilva07/zyrax-guard/internal/ecosystem/crates"
+	"github.com/tiagosilva07/zyrax-guard/internal/ecosystem/gomod"
 	"github.com/tiagosilva07/zyrax-guard/internal/ecosystem/npm"
 	"github.com/tiagosilva07/zyrax-guard/internal/ecosystem/pypi"
 	"github.com/tiagosilva07/zyrax-guard/internal/httpx"
@@ -13,7 +14,7 @@ import (
 	"github.com/tiagosilva07/zyrax-guard/internal/seam"
 )
 
-// New wires an orchestrator for the named ecosystem (npm, pypi, crates) with a
+// New wires an orchestrator for the named ecosystem (npm, pypi, crates, gomod) with a
 // hardened HTTP client allowlisting just that ecosystem's hosts + OSV, the bundled
 // popular list, OSV intel, and the project-local policy.
 func New(ecosystem, projectDir string) (*Orchestrator, error) {
@@ -35,8 +36,11 @@ func New(ecosystem, projectDir string) (*Orchestrator, error) {
 	case "crates":
 		hosts = []string{crates.Host, crates.StaticHost, intel.OSVHost}
 		eco = crates.New(httpx.New(hosts), data.PopularCrates())
+	case "gomod":
+		hosts = []string{gomod.Host, intel.OSVHost}
+		eco = gomod.New(httpx.New(hosts), data.PopularGoModules())
 	default:
-		return nil, fmt.Errorf("unsupported ecosystem %q (use npm, pypi, or crates)", ecosystem)
+		return nil, fmt.Errorf("unsupported ecosystem %q (use npm, pypi, crates, or gomod)", ecosystem)
 	}
 	// The intel client may talk to OSV for any ecosystem; build it on a client that
 	// allows OSV (each provider's client above already includes intel.OSVHost).

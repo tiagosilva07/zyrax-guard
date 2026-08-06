@@ -151,6 +151,28 @@ var pySepRe = regexp.MustCompile(`[-_.]+`)
 
 func pyNormalize(s string) string { return pySepRe.ReplaceAllString(strings.ToLower(s), "-") }
 
+// parseGoSum parses a go.sum into module->LockEntry. go.sum has two lines per
+// module@version — one hashing the module content (zip) and one hashing just
+// the go.mod file ("<version>/go.mod"). Only the content-hash line is kept:
+// it is the one that would change if the module's actual code were tampered
+// with, which is what LockfileIntegrity is trying to catch.
+func parseGoSum(b []byte) map[string]LockEntry {
+	out := map[string]LockEntry{}
+	sc := bufio.NewScanner(bytes.NewReader(b))
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) != 3 {
+			continue
+		}
+		mod, ver, hash := fields[0], fields[1], fields[2]
+		if strings.HasSuffix(ver, "/go.mod") {
+			continue // go.mod hash line, not the module content hash
+		}
+		out[mod] = LockEntry{Name: mod, Version: ver, Integrity: hash}
+	}
+	return out
+}
+
 // ParseLock parses a lockfile into a name->LockEntry map for the given ecosystem.
 func ParseLock(ecosystem string, b []byte) (map[string]LockEntry, error) {
 	switch ecosystem {
@@ -163,6 +185,8 @@ func ParseLock(ecosystem string, b []byte) (map[string]LockEntry, error) {
 			return tomlToMap(parseTOMLPackages(b)), nil
 		}
 		return parseRequirements(b), nil
+	case "gomod":
+		return parseGoSum(b), nil
 	default:
 		return nil, fmt.Errorf("unsupported ecosystem %q", ecosystem)
 	}

@@ -97,6 +97,8 @@ func osvEcosystem(e string) string {
 		return "PyPI"
 	case "crates":
 		return "crates.io"
+	case "gomod":
+		return "Go"
 	}
 	return e
 }

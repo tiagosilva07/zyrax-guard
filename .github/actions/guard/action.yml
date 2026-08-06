@@ -5,7 +5,7 @@ inputs:
     description: Treat warnings as failures
     default: "true"
   ecosystem:
-    description: npm | pypi | crates
+    description: npm | pypi | crates | gomod
     default: "npm"
 runs:
   using: composite
@@ -13,7 +13,7 @@ runs:
     - shell: bash
       run: |
         set -euo pipefail
-        declare -A LOCK=( [npm]=package-lock.json [crates]=Cargo.lock [pypi]=poetry.lock )
+        declare -A LOCK=( [npm]=package-lock.json [crates]=Cargo.lock [pypi]=poetry.lock [gomod]=go.sum )
         f="${LOCK[${{ inputs.ecosystem }}]}"
         git fetch origin "${{ github.base_ref }}" --depth=1 || true
         git show "origin/${{ github.base_ref }}:$f" > /tmp/base-lock 2>/dev/null || : > /tmp/base-lock
