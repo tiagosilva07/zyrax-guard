@@ -651,6 +651,10 @@ func cmdScanAgents(args []string) int {
 		return 0
 	}
 
+	fmt.Fprintf(os.Stdout, "  %sSCAN REPORT%s · zyrax-guard %s\n", cyan, reset, version)
+	fmt.Fprintf(os.Stdout, "  %d finding(s) requiring review\n\n", len(findings))
+	fmt.Fprintf(os.Stdout, "  %s\n\n", severityBadges(findings, red, yellow, reset))
+
 	for _, f := range findings {
 		sev := f.Severity
 		col := yellow
@@ -685,6 +689,24 @@ func agentScanExit(findings []agentsec.Finding, strict bool) int {
 		}
 	}
 	return 0
+}
+
+// severityBadges renders bracketed per-severity counts, e.g. "[2 CRITICAL]  [1 HIGH]".
+func severityBadges(findings []agentsec.Finding, red, yellow, reset string) string {
+	counts := agentsec.CountBySeverity(findings)
+	var badges []string
+	for _, sev := range agentsec.SeverityOrder {
+		n := counts[sev]
+		if n == 0 {
+			continue
+		}
+		col := yellow
+		if sev == "CRITICAL" || sev == "HIGH" {
+			col = red
+		}
+		badges = append(badges, fmt.Sprintf("%s[%d %s]%s", col, n, sev, reset))
+	}
+	return strings.Join(badges, "  ")
 }
 
 func colorCode(enabled bool, code string) string {

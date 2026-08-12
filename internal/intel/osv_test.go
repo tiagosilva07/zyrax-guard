@@ -25,8 +25,15 @@ func TestOSVLookup(t *testing.T) {
 }
 
 func TestDenylist(t *testing.T) {
-	if !InDenylist("npm", "known-evil-pkg") {
-		t.Skip("seed denylist may be empty in v1; ensure InDenylist exists")
+	// "crossenv" is a real seeded entry (internal/data/denylist.json) — asserting
+	// against a name that was never seeded (as this test previously did with
+	// "known-evil-pkg") only ever skips, so a regression that broke InDenylist
+	// entirely (e.g. the embedded data failing to load) would go undetected.
+	if !InDenylist("npm", "crossenv") {
+		t.Fatal("expected InDenylist(\"npm\", \"crossenv\") to be true — seed denylist entry missing or InDenylist broken")
+	}
+	if InDenylist("npm", "definitely-not-malicious-pkg") {
+		t.Fatal("expected InDenylist to be false for an unlisted package")
 	}
 }
 
