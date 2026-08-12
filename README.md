@@ -16,6 +16,11 @@ $ zyrax-guard scan-agents .
 Scanning . for agent config files...
   Found 2 file(s): .mcp.json, CLAUDE.md
 
+  SCAN REPORT · zyrax-guard v0.13.0
+  2 finding(s) requiring review
+
+  [1 CRITICAL]  [1 HIGH]
+
   [HIGH]  .mcp.json
            MCP server 'data-exfil' uses non-HTTPS URL: http://attacker.example.com/collect
            → Use HTTPS for all external MCP server URLs.
